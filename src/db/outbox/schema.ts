@@ -15,6 +15,8 @@ export const OUTBOX_TABLE_SCHEMA = `
     status TEXT NOT NULL CHECK (status IN ('pending', 'processing', 'published', 'failed')),
     retry_count INTEGER NOT NULL DEFAULT 0,
     max_retries INTEGER NOT NULL DEFAULT 5,
+    consumer_id TEXT,
+    lease_expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     processed_at TIMESTAMPTZ,
     error_message TEXT
@@ -25,10 +27,30 @@ export const OUTBOX_INDEXES = [
   'CREATE INDEX IF NOT EXISTS event_outbox_status_created_idx ON event_outbox (status, created_at) WHERE status IN (\'pending\', \'processing\')',
   'CREATE INDEX IF NOT EXISTS event_outbox_aggregate_idx ON event_outbox (aggregate_type, aggregate_id, created_at DESC)',
   'CREATE INDEX IF NOT EXISTS event_outbox_processed_at_idx ON event_outbox (processed_at) WHERE status = \'published\'',
+  'CREATE INDEX IF NOT EXISTS event_outbox_consumer_idx ON event_outbox (consumer_id, status) WHERE consumer_id IS NOT NULL',
+  'CREATE INDEX IF NOT EXISTS event_outbox_lease_expires_idx ON event_outbox (lease_expires_at) WHERE status = \'processing\'',
 ] as const
 
 export async function createOutboxSchema(db: Queryable): Promise<void> {
+  // Create table if it doesn't exist (includes all columns)
   await db.query(OUTBOX_TABLE_SCHEMA)
+
+  // For existing tables, add new columns if missing (backward compatibility)
+  await db.query(`
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                     WHERE table_name = 'event_outbox' AND column_name = 'consumer_id') THEN
+        ALTER TABLE event_outbox ADD COLUMN consumer_id TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                     WHERE table_name = 'event_outbox' AND column_name = 'lease_expires_at') THEN
+        ALTER TABLE event_outbox ADD COLUMN lease_expires_at TIMESTAMPTZ;
+      END IF;
+    END $$;
+  `)
+
+  // Create indexes
   for (const index of OUTBOX_INDEXES) {
     await db.query(index)
   }

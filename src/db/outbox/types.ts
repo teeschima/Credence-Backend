@@ -10,6 +10,8 @@ export interface OutboxEvent {
   status: OutboxEventStatus
   retryCount: number
   maxRetries: number
+  consumerId?: string | null
+  leaseExpiresAt?: Date | null
   createdAt: Date
   processedAt: Date | null
   errorMessage: string | null
