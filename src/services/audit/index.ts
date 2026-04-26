@@ -12,7 +12,7 @@ import { AuditAction } from './types.js'
  * In production, this would write to a database or centralized logging system
  */
 export class AuditLogService {
-  constructor(private readonly repository: AuditLogRepository) {}
+  constructor(private readonly repository: AuditLogRepository = new InMemoryAuditLogsRepository()) {}
 
   /**
    * Log an admin action

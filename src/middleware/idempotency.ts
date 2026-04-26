@@ -2,6 +2,10 @@ import { Request, Response, NextFunction } from 'express'
 import { IdempotencyRepository } from '../db/repositories/idempotencyRepository.js'
 import { computeRequestHash } from '../utils/hash.js'
 
+export interface IdempotencyOptions {
+  expiresInSeconds?: number
+}
+
 /**
  * Middleware to handle idempotency keys and ensure reliable retries.
  * 
@@ -15,9 +19,15 @@ import { computeRequestHash } from '../utils/hash.js'
  * 5. If key doesn't exist, intercept the response to store it before sending.
  * 
  * @param repo - The idempotency repository
+ * @param options - Configuration options
  * @returns Express middleware
  */
-export function idempotencyMiddleware(repo: IdempotencyRepository) {
+export function idempotencyMiddleware(
+  repo: IdempotencyRepository,
+  options: IdempotencyOptions = {}
+) {
+  const expiresInSeconds = options.expiresInSeconds ?? 86400 // Default 24 hours
+
   return async (req: Request, res: Response, next: NextFunction) => {
     const key = req.headers['idempotency-key'] as string
     if (!key) {
@@ -53,7 +63,7 @@ export function idempotencyMiddleware(repo: IdempotencyRepository) {
             requestHash: hash,
             responseCode: res.statusCode,
             responseBody: body,
-            expiresInSeconds: 86400, // 24 hours
+            expiresInSeconds,
           }).catch((err) => {
             console.error(`[Idempotency] Failed to save key ${key}:`, err)
           })

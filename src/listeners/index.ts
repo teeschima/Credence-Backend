@@ -14,3 +14,13 @@ export {
   type EventFetcher,
   type ScoreInvalidationCallback,
 } from './attestationEvents.js'
+export {
+  DlqReasonCode,
+  DlqRouter,
+  validateMessage,
+  validateAndRoute,
+  type DlqSink,
+  type ValidationResult,
+  type ValidationSuccess,
+  type ValidationFailure,
+} from './messageValidator.js'

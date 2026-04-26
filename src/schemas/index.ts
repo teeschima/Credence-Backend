@@ -23,3 +23,11 @@ export {
   type AttestationsQuery,
   type CreateAttestationBody,
 } from './attestations.js'
+export {
+  attestationEventSchema,
+  withdrawalEventSchema,
+  bondCreationEventSchema,
+  type AttestationEventPayload,
+  type WithdrawalEventPayload,
+  type BondCreationEventPayload,
+} from './queue.js'

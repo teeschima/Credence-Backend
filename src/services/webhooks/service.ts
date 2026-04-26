@@ -1,7 +1,8 @@
 import { randomBytes } from 'crypto'
-import type { WebhookStore, WebhookEventType, WebhookPayload, WebhookDeliveryResult, WebhookConfig } from './types.js'
+import type { WebhookStore, WebhookEventType, WebhookPayload, WebhookDeliveryResult, WebhookConfig, DlqStore } from './types.js'
 import { deliverWebhook, type DeliveryOptions } from './delivery.js'
 import { type AuditLogService, AuditAction } from '../audit/index.js'
+import { buildDlqEntry } from './dlq.js'
 
 /**
  * Webhook service for delivering bond lifecycle events.
@@ -12,8 +13,9 @@ export class WebhookService {
 
   constructor(
     private readonly store: WebhookStore,
+    private readonly deliveryOptions?: DeliveryOptions,
+    private readonly dlq?: DlqStore,
     private readonly auditLog?: AuditLogService,
-    private readonly deliveryOptions?: DeliveryOptions
   ) {}
 
   /**
@@ -133,8 +135,9 @@ export class WebhookService {
  */
 export function createWebhookService(
   store: WebhookStore,
+  deliveryOptions?: DeliveryOptions,
+  dlq?: DlqStore,
   auditLog?: AuditLogService,
-  deliveryOptions?: DeliveryOptions
 ): WebhookService {
-  return new WebhookService(store, auditLog, deliveryOptions)
+  return new WebhookService(store, deliveryOptions, dlq, auditLog)
 }

@@ -91,8 +91,12 @@ export class PolicyService {
     )
   }
 
-  listRules(orgId: string): PolicyRule[] {
-    return this.store.findByOrg(orgId)
+  listRules(
+    orgId: string,
+    limit = 20,
+    offset = 0,
+  ): { rules: PolicyRule[]; total: number } {
+    return this.store.findByOrg(orgId, limit, offset)
   }
 
   getRule(ruleId: string): PolicyRule | null {

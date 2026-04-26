@@ -44,8 +44,12 @@ export function createDbProbe(
       }
       await withTimeout(pool.query("SELECT 1"), CHECK_TIMEOUT_MS);
       return { status: "up" };
-    } catch {
-      return { status: "down" };
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message === "timeout"
+          ? "timeout"
+          : "connection_refused";
+      return { status: "down", reason };
     }
   };
 }
@@ -87,8 +91,12 @@ function createGenericRedisProbe(
       }
       await withTimeout(client!.ping(), CHECK_TIMEOUT_MS);
       return { status: "up" };
-    } catch {
-      return { status: "down" };
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message === "timeout"
+          ? "timeout"
+          : "connection_refused";
+      return { status: "down", reason };
     }
   };
 }
@@ -123,9 +131,13 @@ export function createGatewayProbe(
   return async () => {
     try {
       const ok = await withTimeout(check(), CHECK_TIMEOUT_MS);
-      return { status: ok ? "up" : "down" };
-    } catch {
-      return { status: "down" };
+      return ok ? { status: "up" } : { status: "down", reason: "unhealthy_response" };
+    } catch (err) {
+      const reason =
+        err instanceof Error && err.message === "timeout"
+          ? "timeout"
+          : "connection_refused";
+      return { status: "down", reason };
     }
   };
 }

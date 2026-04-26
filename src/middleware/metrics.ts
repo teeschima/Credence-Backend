@@ -11,9 +11,13 @@
 
 import { Request, Response, NextFunction } from 'express'
 import client from 'prom-client'
+import { registerLatencyMetrics } from '../observability/latencyMetrics.js'
 
 // Create a Registry to register metrics
 export const register = new client.Registry()
+
+// Register latency percentile metrics
+registerLatencyMetrics(register)
 
 // Add default Node.js metrics (CPU, memory, event loop, etc.)
 client.collectDefaultMetrics({ 

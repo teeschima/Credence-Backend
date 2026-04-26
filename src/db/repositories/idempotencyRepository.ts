@@ -37,7 +37,7 @@ export class IdempotencyRepository {
       key: row.key,
       requestHash: row.request_hash,
       responseCode: row.response_code,
-      responseBody: row.response_body,
+      responseBody: typeof row.response_body === 'string' ? JSON.parse(row.response_body) : row.response_body,
       expiresAt: new Date(row.expires_at),
       createdAt: new Date(row.created_at),
     }

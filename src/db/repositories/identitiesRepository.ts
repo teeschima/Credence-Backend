@@ -5,6 +5,7 @@ export interface Identity {
   displayName: string | null
   createdAt: Date
   updatedAt: Date
+  version: number
 }
 
 export interface CreateIdentityInput {
@@ -16,11 +17,17 @@ export interface UpdateIdentityInput {
   displayName: string | null
 }
 
+export interface UpdateIdentityWithVersionInput {
+  displayName: string | null
+  expectedVersion: number
+}
+
 type IdentityRow = {
   address: string
   display_name: string | null
   created_at: Date | string
   updated_at: Date | string
+  version: number
 }
 
 const toDate = (value: Date | string): Date =>
@@ -31,6 +38,7 @@ const mapIdentity = (row: IdentityRow): Identity => ({
   displayName: row.display_name,
   createdAt: toDate(row.created_at),
   updatedAt: toDate(row.updated_at),
+  version: row.version,
 })
 
 export class IdentitiesRepository {
@@ -41,7 +49,7 @@ export class IdentitiesRepository {
       `
       INSERT INTO identities (address, display_name)
       VALUES ($1, $2)
-      RETURNING address, display_name, created_at, updated_at
+      RETURNING address, display_name, created_at, updated_at, version
       `,
       [input.address, input.displayName ?? null]
     )
@@ -52,7 +60,7 @@ export class IdentitiesRepository {
   async findByAddress(address: string): Promise<Identity | null> {
     const result = await this.db.query<IdentityRow>(
       `
-      SELECT address, display_name, created_at, updated_at
+      SELECT address, display_name, created_at, updated_at, version
       FROM identities
       WHERE address = $1
       `,
@@ -65,7 +73,7 @@ export class IdentitiesRepository {
   async list(): Promise<Identity[]> {
     const result = await this.db.query<IdentityRow>(
       `
-      SELECT address, display_name, created_at, updated_at
+      SELECT address, display_name, created_at, updated_at, version
       FROM identities
       ORDER BY created_at ASC, address ASC
       `
@@ -82,11 +90,37 @@ export class IdentitiesRepository {
       `
       UPDATE identities
       SET display_name = $2,
-          updated_at = NOW()
+          updated_at = NOW(),
+          version = version + 1
       WHERE address = $1
-      RETURNING address, display_name, created_at, updated_at
+      RETURNING address, display_name, created_at, updated_at, version
       `,
       [address, input.displayName]
+    )
+
+    return result.rows[0] ? mapIdentity(result.rows[0]) : null
+  }
+
+  /**
+   * Updates an identity with optimistic locking.
+   * Only updates if the current version matches the expected version.
+   * Returns null if the version has changed (concurrent modification detected).
+   * On success, increments the version and returns the updated identity.
+   */
+  async updateWithOptimisticLocking(
+    address: string,
+    input: UpdateIdentityWithVersionInput
+  ): Promise<Identity | null> {
+    const result = await this.db.query<IdentityRow>(
+      `
+      UPDATE identities
+      SET display_name = $2,
+          updated_at = NOW(),
+          version = version + 1
+      WHERE address = $1 AND version = $3
+      RETURNING address, display_name, created_at, updated_at, version
+      `,
+      [address, input.displayName, input.expectedVersion]
     )
 
     return result.rows[0] ? mapIdentity(result.rows[0]) : null

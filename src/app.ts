@@ -6,12 +6,17 @@ import trustRouter from './routes/trust.js'
 import bulkRouter from './routes/bulk.js'
 import importsRouter from './routes/imports.js'
 import { createAdminRouter } from './routes/admin/index.js'
+import { createWebhookAdminRouter } from './routes/admin/webhooks.js'
 import { createPolicyRouter } from './routes/policy.js'
 import { createAnalyticsRouter } from './routes/analytics.js'
+import { createPayoutsRouter } from './routes/payouts.js'
 import { AnalyticsService } from './services/analytics/service.js'
 import { pool } from './db/pool.js'
 import { validate } from './middleware/validate.js'
 import { requestIdMiddleware } from './middleware/requestId.js'
+import { errorHandler } from './middleware/errorHandler.js'
+import { createRateLimitMiddleware } from './middleware/rateLimit.js'
+import { validateConfig } from './config/index.js'
 import {
   buildPaginationMeta,
   parsePaginationParams,
@@ -23,9 +28,27 @@ import {
 } from './schemas/index.js'
 import { compressionMiddleware, compressionMetricsMiddleware } from './middleware/compression.js'
 import { metricsMiddleware, register } from './middleware/metrics.js'
-import { createMembersRouter } from './routes/admin/member.ts'
+import { createWebhookAdminRouter } from './routes/admin/webhooks.js'
+import { errorHandler } from './middleware/errorHandler.js'
 
 const app = express()
+
+// Load config safely; fall back to defaults if env is incomplete (e.g. in tests)
+let rateLimitConfig: { enabled: boolean; windowSec: number; maxFree: number; maxPro: number; maxEnterprise: number; failOpen: boolean }
+try {
+  rateLimitConfig = validateConfig(process.env).rateLimit
+} catch {
+  rateLimitConfig = {
+    enabled: true,
+    windowSec: 60,
+    maxFree: 100,
+    maxPro: 1000,
+    maxEnterprise: 10000,
+    failOpen: true,
+  }
+}
+
+const rateLimitMiddleware = createRateLimitMiddleware(rateLimitConfig)
 
 // Request context and correlation IDs
 app.use(requestIdMiddleware)
@@ -37,6 +60,7 @@ app.get('/metrics', async (_req, res) => {
 })
 
 app.use(metricsMiddleware)
+app.use(latencyMetricsMiddleware)
 app.use(compressionMetricsMiddleware)
 app.use(compressionMiddleware)
 app.use(express.json())
@@ -47,6 +71,10 @@ app.use('/.well-known/jwks.json', createJwksRouter())
 // Health – full readiness check with per-dependency status
 const healthProbes = createDefaultProbes()
 app.use('/api/health', createHealthRouter(healthProbes))
+
+// Apply tenant-level rate limiting to all API routes below this line.
+// Excluded above: metrics, JWKS, health (unauthenticated / infra endpoints).
+app.use('/api', rateLimitMiddleware)
 
 // Trust score
 app.use('/api/trust', trustRouter)
@@ -110,6 +138,10 @@ app.use('/api/imports', importsRouter)
 // Admin API
 app.use('/api/admin', createAdminRouter())
 app.use('/api/admin/webhooks', createWebhookAdminRouter())
+app.use('/api/admin/members', createMembersRouter())
+
+// Integration API key management (create, list, rotate, revoke)
+app.use('/api/integrations/keys', createApiKeyRouter())
 
 // Policy engine – fine-grained org permissions
 app.use('/api/orgs/:orgId/policies', createPolicyRouter())
@@ -119,6 +151,9 @@ const analyticsService = process.env.DATABASE_URL
   ? new AnalyticsService(pool, analyticsThresholdSeconds)
   : undefined
 app.use('/api/analytics', createAnalyticsRouter(analyticsService))
+
+// Payouts
+app.use('/api/payouts', createPayoutsRouter())
 
 // Final error handler
 app.use(errorHandler)

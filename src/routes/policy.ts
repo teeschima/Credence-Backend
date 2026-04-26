@@ -17,6 +17,10 @@ import { requirePolicy } from '../middleware/policy.js'
 import { policyService } from '../services/policy/service.js'
 import type { AuthenticatedRequest } from '../middleware/auth.js'
 import type { CreatePolicyRuleInput } from '../services/policy/types.js'
+import {
+  buildPaginationMeta,
+  parsePaginationParams,
+} from '../lib/pagination.js'
 
 export function createPolicyRouter(): Router {
   const router = Router({ mergeParams: true })
@@ -57,9 +61,15 @@ export function createPolicyRouter(): Router {
     '/',
     requireUserAuth,
     requirePolicy('org:policy:read', (req) => `org:${req.params.orgId}`),
-    (req: Request, res: Response) => {
-      const rules = policyService.listRules(req.params.orgId)
-      res.json({ success: true, data: rules })
+    (req: Request, res: Response, next) => {
+      try {
+        const { page, limit, offset } = parsePaginationParams(req.query as Record<string, unknown>)
+        const { rules, total } = policyService.listRules(req.params.orgId, limit, offset)
+        const paginationMeta = buildPaginationMeta(total, page, limit)
+        res.json({ success: true, data: rules, ...paginationMeta })
+      } catch (error) {
+        next(error)
+      }
     },
   )
 

@@ -5,7 +5,7 @@ import {
 	AttestationsRepository,
 	BondsRepository,
 	IdentitiesRepository,
-	ScoreHistoryRepository,
+	SettlementsRepository,
 	SlashEventsRepository,
 	type BondStatus,
 } from "../../src/db/repositories/index.js";
@@ -39,6 +39,7 @@ describe("DB repositories integration", () => {
 	let attestationsRepository: AttestationsRepository;
 	let slashEventsRepository: SlashEventsRepository;
 	let scoreHistoryRepository: ScoreHistoryRepository;
+	let settlementsRepository: SettlementsRepository;
 
 	before(async () => {
 		database = await createTestDatabase();
@@ -50,6 +51,7 @@ describe("DB repositories integration", () => {
 		attestationsRepository = new AttestationsRepository(database.pool);
 		slashEventsRepository = new SlashEventsRepository(database.pool);
 		scoreHistoryRepository = new ScoreHistoryRepository(database.pool);
+		settlementsRepository = new SettlementsRepository(database.pool);
 	});
 
 	beforeEach(async () => {
@@ -838,6 +840,145 @@ describe("DB repositories integration", () => {
 				await scoreHistoryRepository.listByIdentity("GDATE_TEST");
 			assert.equal(orderedHistory[0].id, secondEntry.id); // Latest first
 			assert.equal(orderedHistory[1].id, scoreEntry.id);
+		});
+	});
+
+	describe("settlements repository", () => {
+		it("supports create and upsert with unique constraint", async () => {
+			await identitiesRepository.create({ address: "GSETTLE_OWNER" });
+
+			const bond = await bondsRepository.create({
+				identityAddress: "GSETTLE_OWNER",
+				amount: "10",
+				startTime: new Date("2025-01-01T00:00:00.000Z"),
+				durationDays: 30,
+			});
+
+			const first = await settlementsRepository.upsert({
+				bondId: bond.id,
+				amount: "100.50",
+				transactionHash: "0xtx001",
+				status: "settled",
+			});
+
+			assert.ok(first.settlement);
+			assert.equal(first.settlement.amount, "100.50");
+			assert.equal(first.settlement.status, "settled");
+			assert.equal(first.isDuplicate, false);
+
+			const duplicate = await settlementsRepository.upsert({
+				bondId: bond.id,
+				amount: "200.75",
+				transactionHash: "0xtx001",
+				status: "settled",
+			});
+
+			assert.equal(duplicate.isDuplicate, true);
+			assert.equal(duplicate.settlement.amount, "200.75");
+			assert.equal(duplicate.settlement.id, first.settlement.id);
+		});
+
+		it("supports query methods", async () => {
+			await identitiesRepository.create({ address: "GSETTLE_QUERY" });
+
+			const bond = await bondsRepository.create({
+				identityAddress: "GSETTLE_QUERY",
+				amount: "5",
+				startTime: new Date("2025-01-01T00:00:00.000Z"),
+				durationDays: 20,
+			});
+
+			await settlementsRepository.upsert({
+				bondId: bond.id,
+				amount: "50",
+				transactionHash: "0xtxquery1",
+				status: "pending",
+			});
+
+			await delay(10);
+			await settlementsRepository.upsert({
+				bondId: bond.id,
+				amount: "75",
+				transactionHash: "0xtxquery2",
+				status: "settled",
+			});
+
+			const byBond = await settlementsRepository.findByBondId(bond.id);
+			assert.equal(byBond.length, 2);
+			assert.equal(byBond[0].transactionHash, "0xtxquery2");
+
+			const byHash = await settlementsRepository.findByTransactionHash(
+				"0xtxquery1",
+			);
+			assert.ok(byHash);
+			assert.equal(byHash.status, "pending");
+
+			const count = await settlementsRepository.countByBondId(bond.id);
+			assert.equal(count, 2);
+
+			assert.equal(
+				await settlementsRepository.findByTransactionHash("0xmissing"),
+				null,
+			);
+		});
+
+		it("enforces unique constraint and prevents duplicates", async () => {
+			await identitiesRepository.create({ address: "GSETTLE_CONSTRAINT" });
+
+			const bond = await bondsRepository.create({
+				identityAddress: "GSETTLE_CONSTRAINT",
+				amount: "8",
+				startTime: new Date("2025-01-01T00:00:00.000Z"),
+				durationDays: 15,
+			});
+
+			await settlementsRepository.upsert({
+				bondId: bond.id,
+				amount: "25",
+				transactionHash: "0xtxduplicate",
+				status: "pending",
+			});
+
+			await expectPgError(
+				settlementsRepository.upsert({
+					bondId: bond.id,
+					amount: "30",
+					transactionHash: "0xtxduplicate",
+					status: "settled",
+				}),
+				"23505",
+			);
+		});
+
+		it("handles delete and supports foreign key cascade", async () => {
+			await identitiesRepository.create({ address: "GSETTLE_DELETE" });
+
+			const bond = await bondsRepository.create({
+				identityAddress: "GSETTLE_DELETE",
+				amount: "3",
+				startTime: new Date("2025-01-01T00:00:00.000Z"),
+				durationDays: 10,
+			});
+
+			const settlement = await settlementsRepository.upsert({
+				bondId: bond.id,
+				amount: "15",
+				transactionHash: "0xtxdel",
+				status: "pending",
+			});
+
+			assert.equal(
+				await settlementsRepository.delete(settlement.settlement.id),
+				true,
+			);
+			assert.equal(
+				await settlementsRepository.delete(settlement.settlement.id),
+				false,
+			);
+
+			assert.equal(await bondsRepository.delete(bond.id), true);
+			const allSettled = await settlementsRepository.findByBondId(bond.id);
+			assert.equal(allSettled.length, 0);
 		});
 	});
 });

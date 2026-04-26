@@ -1,6 +1,6 @@
 import { SettlementsRepository, Settlement, CreateSettlementInput } from '../db/repositories/settlementsRepository.js'
 import { cache } from '../cache/redis.js'
-import { recordStaleCacheRead } from '../middleware/metrics.js'
+import { invalidateCache } from '../cache/invalidation.js'
 
 export class SettlementService {
   constructor(private readonly repository: SettlementsRepository) {}
@@ -38,15 +38,16 @@ export class SettlementService {
   async upsertSettlementStatus(input: CreateSettlementInput): Promise<Settlement> {
     const { settlement } = await this.repository.upsert(input)
     
-    // Post-commit hook: invalidate the cache immediately after status mutation
-    await cache.delete('settlement', settlement.transactionHash)
-    
-    // Fallback stale-read detection metric
-    // Verify that the cache actually cleared, checking if another process concurrently overwrote it with stale data
-    const staleCheck = await cache.get<Settlement>('settlement', settlement.transactionHash)
-    if (staleCheck && staleCheck.status !== settlement.status) {
-      recordStaleCacheRead('settlement')
-    }
+    // Post-commit hook: invalidate the cache immediately after status mutation with verification
+    await invalidateCache(
+      'settlement',
+      settlement.transactionHash,
+      settlement,
+      {
+        verify: true,
+        verifyFn: (cached, fresh) => cached.status !== fresh.status
+      }
+    )
 
     return settlement
   }

@@ -14,6 +14,7 @@ export enum ErrorCode {
   BATCH_SIZE_TOO_SMALL = 'batch_size_too_small',
   INTERNAL_SERVER_ERROR = 'internal_server_error',
   SERVICE_UNAVAILABLE = 'service_unavailable',
+  RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded',
 }
 
 /**

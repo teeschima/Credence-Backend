@@ -12,7 +12,7 @@ import { auditLogService } from '../../services/audit/index.js'
 export function createWebhookAdminRouter(): Router {
   const router = Router()
   const store = new PostgresWebhookRepository(pool)
-  const webhookService = new WebhookService(store, auditLogService)
+  const webhookService = new WebhookService(store, undefined, undefined, auditLogService)
 
   /**
    * POST /api/admin/webhooks/:id/rotate
