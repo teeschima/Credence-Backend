@@ -12,7 +12,7 @@ import { auditLogService } from '../../services/audit/index.js'
 export function createWebhookAdminRouter(): Router {
   const router = Router()
   const store = new PostgresWebhookRepository(pool)
-  const webhookService = new WebhookService(store, auditLogService)
+  const webhookService = new WebhookService(store, undefined, undefined, auditLogService)
 
   /**
    * POST /api/admin/webhooks/:id/rotate
@@ -25,7 +25,7 @@ export function createWebhookAdminRouter(): Router {
       const { id } = req.params
       const admin = (req as AuthenticatedRequest).user!
       
-      const webhook = await webhookService.rotateSecret(id, { id: admin.id, email: admin.email })
+      const webhook = await webhookService.rotateSecret(id, { id: admin.id, email: admin.email, tenantId: admin.tenantId })
       
       res.json({
         success: true,
@@ -52,7 +52,7 @@ export function createWebhookAdminRouter(): Router {
       const { id } = req.params
       const admin = (req as AuthenticatedRequest).user!
 
-      await webhookService.revokePreviousSecret(id, { id: admin.id, email: admin.email })
+      await webhookService.revokePreviousSecret(id, { id: admin.id, email: admin.email, tenantId: admin.tenantId })
       
       res.json({
         success: true,

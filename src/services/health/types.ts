@@ -6,6 +6,8 @@ export type DependencyStatus = 'up' | 'down' | 'not_configured'
 
 export interface DependencyHealth {
   status: DependencyStatus
+  /** Human-readable reason for non-'up' status. Omitted when status is 'up'. */
+  reason?: string
 }
 
 export interface HealthResult {

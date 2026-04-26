@@ -82,6 +82,7 @@ export function createMembersRouter(): Router {
       const { page, limit, offset } = pagination
 
       const result = await memberService.listMembers(
+        authReq.user!.tenantId,
         authReq.user!.id,
         authReq.user!.email,
         orgId,
@@ -150,6 +151,7 @@ export function createMembersRouter(): Router {
       }
 
       const result = await memberService.inviteMember(
+        authReq.user!.tenantId,
         authReq.user!.id,
         authReq.user!.email,
         { orgId, userId, email, role: (role as MemberRole) ?? 'member' },
@@ -187,6 +189,7 @@ export function createMembersRouter(): Router {
       }
 
       const result = await memberService.updateMemberRole(
+        authReq.user!.tenantId,
         authReq.user!.id,
         authReq.user!.email,
         { memberId, role: role as MemberRole },
@@ -217,6 +220,7 @@ export function createMembersRouter(): Router {
       const { memberId } = req.params
 
       const result = await memberService.deleteMember(
+        authReq.user!.tenantId,
         authReq.user!.id,
         authReq.user!.email,
         { memberId },
@@ -247,6 +251,7 @@ export function createMembersRouter(): Router {
       const { memberId } = req.params
 
       const result = await memberService.restoreMember(
+        authReq.user!.tenantId,
         authReq.user!.id,
         authReq.user!.email,
         { memberId },

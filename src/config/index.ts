@@ -113,7 +113,9 @@ export const envSchema = z.object({
   OUTBOUND_RETRY_BASE_DELAY_MS: z.coerce.number().int().min(1).default(200),
   OUTBOUND_RETRY_MAX_DELAY_MS: z.coerce.number().int().min(1).default(2_000),
   OUTBOUND_RETRY_BACKOFF_MULTIPLIER: z.coerce.number().min(1).default(2),
-  OUTBOUND_RETRY_JITTER_STRATEGY: z.enum(['none', 'full', 'equal']).default('none'),
+  OUTBOUND_RETRY_JITTER_STRATEGY: z
+    .enum(['none', 'full', 'equal'])
+    .default('none'),
 
   // Provider-specific outbound retry overrides
   OUTBOUND_RETRY_SOROBAN_MAX_ATTEMPTS: z.coerce.number().int().min(1).optional(),
@@ -127,6 +129,36 @@ export const envSchema = z.object({
   OUTBOUND_RETRY_WEBHOOK_MAX_DELAY_MS: z.coerce.number().int().min(1).optional(),
   OUTBOUND_RETRY_WEBHOOK_BACKOFF_MULTIPLIER: z.coerce.number().min(1).optional(),
   OUTBOUND_RETRY_WEBHOOK_JITTER_STRATEGY: z.enum(['none', 'full', 'equal']).optional(),
+
+  // Rate limiting
+  RATE_LIMIT_ENABLED: z
+    .string()
+    .default('true')
+    .transform((val: string) => val === 'true'),
+  RATE_LIMIT_WINDOW_SEC: z
+    .string()
+    .default('60')
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(3600)),
+  RATE_LIMIT_MAX_FREE: z
+    .string()
+    .default('100')
+    .transform(Number)
+    .pipe(z.number().int().min(1)),
+  RATE_LIMIT_MAX_PRO: z
+    .string()
+    .default('1000')
+    .transform(Number)
+    .pipe(z.number().int().min(1)),
+  RATE_LIMIT_MAX_ENTERPRISE: z
+    .string()
+    .default('10000')
+    .transform(Number)
+    .pipe(z.number().int().min(1)),
+  RATE_LIMIT_FAIL_OPEN: z
+    .string()
+    .default('true')
+    .transform((val: string) => val === 'true'),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -137,6 +169,11 @@ export interface Config {
   logLevel: 'debug' | 'info' | 'warn' | 'error'
   db: {
     url: string
+    lockTimeouts: {
+      readonlyMs: number
+      defaultMs: number
+      criticalMs: number
+    }
   }
   redis: {
     url: string
@@ -179,6 +216,14 @@ export interface Config {
       defaults: RetryPolicy
       providers: Record<string, RetryPolicyOverrides | undefined>
     }
+  }
+  rateLimit: {
+    enabled: boolean
+    windowSec: number
+    maxFree: number
+    maxPro: number
+    maxEnterprise: number
+    failOpen: boolean
   }
 }
 
@@ -245,6 +290,11 @@ function mapEnvToConfig(env: Env): Config {
     logLevel: env.LOG_LEVEL,
     db: {
       url: env.DB_URL,
+      lockTimeouts: {
+        readonlyMs: env.DB_LOCK_TIMEOUT_READONLY_MS,
+        defaultMs: env.DB_LOCK_TIMEOUT_DEFAULT_MS,
+        criticalMs: env.DB_LOCK_TIMEOUT_CRITICAL_MS,
+      },
     },
     redis: {
       url: env.REDIS_URL,
@@ -273,17 +323,35 @@ function mapEnvToConfig(env: Env): Config {
     cors: {
       origin: env.CORS_ORIGIN,
     },
+    timeouts: {
+      db: env.TIMEOUT_DB_MS,
+      cache: env.TIMEOUT_CACHE_MS,
+      queue: env.TIMEOUT_QUEUE_MS,
+      http: env.TIMEOUT_HTTP_MS,
+      soroban: env.TIMEOUT_SOROBAN_MS,
+      webhook: env.TIMEOUT_WEBHOOK_MS,
+    },
     outboundHttp: {
       retry: {
         defaults: defaultRetryPolicy,
         providers: providerPolicies,
       },
     },
+    rateLimit: {
+      enabled: env.RATE_LIMIT_ENABLED,
+      windowSec: env.RATE_LIMIT_WINDOW_SEC,
+      maxFree: env.RATE_LIMIT_MAX_FREE,
+      maxPro: env.RATE_LIMIT_MAX_PRO,
+      maxEnterprise: env.RATE_LIMIT_MAX_ENTERPRISE,
+      failOpen: env.RATE_LIMIT_FAIL_OPEN,
+    },
   }
 
   if (env.HORIZON_URL) {
     config.horizon = { url: env.HORIZON_URL }
   }
+
+  
 
   return config
 }

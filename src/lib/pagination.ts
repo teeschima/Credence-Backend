@@ -6,6 +6,8 @@ export interface PaginationParams {
   page: number
   limit: number
   offset: number
+  cursor: string | null
+  decodedCursor?: DecodedCursor
 }
 
 export interface PaginationMeta {
@@ -121,10 +123,15 @@ export function parsePaginationParams(
     page ?? (offset !== undefined ? Math.floor(offset / resolvedLimit) + 1 : defaultPage)
   const resolvedOffset = offset ?? (resolvedPage - 1) * resolvedLimit
 
+  const cursor = typeof query.cursor === 'string' ? query.cursor : null
+  const decodedCursor = cursor ? decodeCursor(cursor) : undefined
+
   return {
     page: resolvedPage,
     limit: resolvedLimit,
     offset: resolvedOffset,
+    cursor,
+    decodedCursor: decodedCursor ?? undefined,
   }
 }
 

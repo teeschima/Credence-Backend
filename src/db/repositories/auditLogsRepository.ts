@@ -19,6 +19,7 @@ type AuditLogRow = {
   status: AuditStatus
   ip_address: string | null
   error_message: string | null
+  tenant_id: string
 }
 
 const toDate = (value: Date | string): Date =>
@@ -51,6 +52,7 @@ const mapAuditLog = (row: AuditLogRow): AuditLogEntry => ({
   status: row.status,
   ipAddress: row.ip_address ?? undefined,
   errorMessage: row.error_message ?? undefined,
+  tenantId: row.tenant_id,
 })
 
 const applyFilters = (
@@ -88,6 +90,10 @@ const applyFilters = (
     params.push(filters.to)
     whereClauses.push(`occurred_at <= $${params.length}`)
   }
+  if (filters.tenantId) {
+    params.push(filters.tenantId)
+    whereClauses.push(`tenant_id = $${params.length}`)
+  }
 }
 
 export interface AuditLogRepository {
@@ -114,9 +120,10 @@ export class PostgresAuditLogsRepository implements AuditLogRepository {
         details_json,
         status,
         ip_address,
-        error_message
+        error_message,
+        tenant_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
       RETURNING
         id,
         occurred_at,
@@ -128,7 +135,8 @@ export class PostgresAuditLogsRepository implements AuditLogRepository {
         details_json,
         status,
         ip_address,
-        error_message
+        error_message,
+        tenant_id
       `,
       [
         id,
@@ -141,6 +149,7 @@ export class PostgresAuditLogsRepository implements AuditLogRepository {
         input.status ?? 'success',
         input.ipAddress ?? null,
         input.errorMessage ?? null,
+        input.tenantId,
       ],
     )
 
@@ -177,7 +186,8 @@ export class PostgresAuditLogsRepository implements AuditLogRepository {
         details_json,
         status,
         ip_address,
-        error_message
+        error_message,
+        tenant_id
       FROM audit_logs
       ${whereSql}
       ORDER BY occurred_at DESC, id DESC
@@ -226,6 +236,7 @@ export class InMemoryAuditLogsRepository implements AuditLogRepository {
       status: input.status ?? 'success',
       ipAddress: input.ipAddress,
       errorMessage: input.errorMessage,
+      tenantId: input.tenantId,
     }
 
     const frozen = Object.freeze(cloneEntry(entry))
@@ -266,6 +277,9 @@ export class InMemoryAuditLogsRepository implements AuditLogRepository {
     if (filters?.to) {
       const toTime = new Date(filters.to).getTime()
       filtered = filtered.filter((log) => new Date(log.timestamp).getTime() <= toTime)
+    }
+    if (filters?.tenantId) {
+      filtered = filtered.filter((log) => log.tenantId === filters.tenantId)
     }
 
     const ordered = [...filtered].sort(

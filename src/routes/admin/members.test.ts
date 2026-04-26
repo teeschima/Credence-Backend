@@ -21,7 +21,7 @@ const mockService = {
   restoreMember: vi.fn(),
 }
 
-vi.mock('../../services/members/service.ts', () => ({
+vi.mock('../../services/members/factory.ts', () => ({
   MemberService: vi.fn().mockImplementation(() => mockService),
 }))
 

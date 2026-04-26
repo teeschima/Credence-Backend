@@ -10,10 +10,11 @@ import { describe, it, expect } from 'vitest'
 import { PolicyService } from '../service.js'
 import { PolicyStore } from '../store.js'
 import { AuditLogService, AuditAction } from '../../audit/index.js'
+import { InMemoryAuditLogsRepository } from '../../../db/repositories/auditLogsRepository.js'
 
 function makeService() {
   const store = new PolicyStore()
-  const audit = new AuditLogService()
+  const audit = new AuditLogService(new InMemoryAuditLogsRepository())
   const svc = new PolicyService(store, audit)
   return { svc, store, audit }
 }
@@ -22,7 +23,7 @@ const actor = { id: 'admin-1', email: 'admin@credence.org' }
 
 describe('PolicyService', () => {
   describe('createRule', () => {
-    it('persists the rule and emits POLICY_RULE_CREATED audit entry', () => {
+    it('persists the rule and emits POLICY_RULE_CREATED audit entry', async () => {
       const { svc, audit } = makeService()
       const rule = svc.createRule(actor.id, actor.email, {
         orgId: 'org-acme',
@@ -32,14 +33,16 @@ describe('PolicyService', () => {
         effect: 'allow',
       })
       expect(rule.id).toBeDefined()
-      const { logs } = audit.getLogs({ action: AuditAction.POLICY_RULE_CREATED })
+      // Allow the fire-and-forget logAction microtask to settle
+      await Promise.resolve()
+      const { logs } = await audit.getLogs({ action: AuditAction.POLICY_RULE_CREATED })
       expect(logs).toHaveLength(1)
       expect(logs[0].details).toMatchObject({ ruleId: rule.id, orgId: 'org-acme' })
     })
   })
 
   describe('updateRule', () => {
-    it('updates the rule and emits POLICY_RULE_UPDATED audit entry', () => {
+    it('updates the rule and emits POLICY_RULE_UPDATED audit entry', async () => {
       const { svc, audit } = makeService()
       const rule = svc.createRule(actor.id, actor.email, {
         orgId: 'org-acme',
@@ -50,7 +53,8 @@ describe('PolicyService', () => {
       })
       const updated = svc.updateRule(actor.id, actor.email, rule.id, { effect: 'deny' })
       expect(updated.effect).toBe('deny')
-      const { logs } = audit.getLogs({ action: AuditAction.POLICY_RULE_UPDATED })
+      await Promise.resolve()
+      const { logs } = await audit.getLogs({ action: AuditAction.POLICY_RULE_UPDATED })
       expect(logs).toHaveLength(1)
     })
 
@@ -61,7 +65,7 @@ describe('PolicyService', () => {
   })
 
   describe('deleteRule', () => {
-    it('removes the rule and emits POLICY_RULE_DELETED audit entry', () => {
+    it('removes the rule and emits POLICY_RULE_DELETED audit entry', async () => {
       const { svc, audit } = makeService()
       const rule = svc.createRule(actor.id, actor.email, {
         orgId: 'org-acme',
@@ -72,7 +76,8 @@ describe('PolicyService', () => {
       })
       svc.deleteRule(actor.id, actor.email, rule.id)
       expect(svc.getRule(rule.id)).toBeNull()
-      const { logs } = audit.getLogs({ action: AuditAction.POLICY_RULE_DELETED })
+      await Promise.resolve()
+      const { logs } = await audit.getLogs({ action: AuditAction.POLICY_RULE_DELETED })
       expect(logs).toHaveLength(1)
     })
 

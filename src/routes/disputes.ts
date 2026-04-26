@@ -19,6 +19,7 @@ router.post('/', requireUserAuth, async (req: Request, res: Response) => {
     const dispute = submitDispute(req.body)
 
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_SUBMITTED,
@@ -35,6 +36,7 @@ router.post('/', requireUserAuth, async (req: Request, res: Response) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_SUBMITTED,
@@ -67,6 +69,7 @@ router.post('/:id/review', requireUserAuth, async (req: Request, res: Response) 
     const dispute = markUnderReview(id)
 
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_MARKED_UNDER_REVIEW,
@@ -79,6 +82,7 @@ router.post('/:id/review', requireUserAuth, async (req: Request, res: Response) 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_MARKED_UNDER_REVIEW,
@@ -102,6 +106,7 @@ router.post('/:id/resolve', requireUserAuth, async (req: Request, res: Response)
     const dispute = resolveDispute(id, resolution)
 
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_RESOLVED,
@@ -114,6 +119,7 @@ router.post('/:id/resolve', requireUserAuth, async (req: Request, res: Response)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_RESOLVED,
@@ -137,6 +143,7 @@ router.post('/:id/dismiss', requireUserAuth, async (req: Request, res: Response)
     const dispute = dismissDispute(id, reason)
 
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_DISMISSED,
@@ -149,6 +156,7 @@ router.post('/:id/dismiss', requireUserAuth, async (req: Request, res: Response)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.DISPUTE_DISMISSED,

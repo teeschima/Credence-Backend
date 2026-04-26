@@ -6,6 +6,7 @@ import {
   type RetryJitterStrategy,
   type RetryPolicyOverrides,
 } from '../../lib/retryPolicy.js'
+import { noopRetryObserver, type RetryObserver } from '../../observability/retryMetrics.js'
 import { logger } from '../../utils/logger.js'
 import type { WebhookConfig, WebhookPayload, WebhookDeliveryResult } from './types.js'
 
@@ -37,6 +38,8 @@ export interface DeliveryOptions {
   randomFn?: () => number
   /** Internal/test hook for injected fetch implementation. */
   fetchFn?: typeof fetch
+  /** Observability hooks for retry events. */
+  retryObserver?: RetryObserver
 }
 
 const DEFAULT_WEBHOOK_RETRY = {
@@ -77,6 +80,7 @@ export async function deliverWebhook(
     sleepFn = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
     randomFn = Math.random,
     fetchFn = fetch,
+    retryObserver = noopRetryObserver,
   } = options
 
   const legacyOverrides: RetryPolicyOverrides = {
@@ -114,6 +118,7 @@ export async function deliverWebhook(
   let lastError: string | undefined
   let lastStatusCode: number | undefined
   let lastResponseBodySnippet: string | undefined
+  const startMs = Date.now()
 
   for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
     attempts = attempt
@@ -133,6 +138,11 @@ export async function deliverWebhook(
       })
 
       if (response.ok) {
+        retryObserver.onSuccess?.({
+          provider,
+          attempt,
+          durationMs: Date.now() - startMs,
+        })
         return {
           webhookId: webhook.id,
           success: true,
@@ -146,6 +156,11 @@ export async function deliverWebhook(
 
       // Don't retry on 4xx errors (client errors)
       if (response.status >= 400 && response.status < 500) {
+        retryObserver.onRetryExhausted?.({
+          provider,
+          attempts: attempt,
+          errorCode: `HTTP_${response.status}`,
+        })
         break
       }
     } catch (err) {
@@ -156,10 +171,22 @@ export async function deliverWebhook(
 
     if (attempt < policy.maxAttempts) {
       const delay = getBackoffDelayMs(policy, attempt, randomFn)
+      retryObserver.onRetryAttempt?.({
+        provider,
+        attempt,
+        delayMs: delay,
+        errorCode: lastStatusCode ? `HTTP_${lastStatusCode}` : 'NETWORK_ERROR',
+      })
       logger.info(
         `Retrying outbound request provider=${provider} attempt=${attempt + 1}/${policy.maxAttempts} delayMs=${delay} webhookId=${webhook.id} error=${lastError ?? 'unknown'}`,
       )
       await sleepFn(delay)
+    } else {
+      retryObserver.onRetryExhausted?.({
+        provider,
+        attempts: attempt,
+        errorCode: lastStatusCode ? `HTTP_${lastStatusCode}` : 'NETWORK_ERROR',
+      })
     }
   }
 

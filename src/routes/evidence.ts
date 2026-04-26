@@ -42,6 +42,7 @@ router.post('/upload', requireUserAuth, requireAdminRole, async (req: Request, r
     const record = await getStorageService().uploadEvidence(finalEvidenceId, rawData, actor.id)
 
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.EVIDENCE_UPLOADED,
@@ -54,6 +55,7 @@ router.post('/upload', requireUserAuth, requireAdminRole, async (req: Request, r
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.EVIDENCE_UPLOADED,
@@ -77,6 +79,7 @@ router.get('/:evidenceId', requireUserAuth, async (req: Request, res: Response) 
     const decrypted = await getStorageService().retrieveEvidence(evidenceId, role)
 
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.EVIDENCE_ACCESSED,
@@ -89,6 +92,7 @@ router.get('/:evidenceId', requireUserAuth, async (req: Request, res: Response) 
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     await auditLogService.logAction({
+      tenantId: actor.tenantId,
       actorId: actor.id,
       actorEmail: actor.email,
       action: AuditAction.EVIDENCE_ACCESSED,

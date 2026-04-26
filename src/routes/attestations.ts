@@ -12,7 +12,7 @@ import type {
   AttestationCountResponse,
   AttestationListResponse,
 } from '../types/attestation.js';
-import { AppError, ErrorCode, ValidationError, NotFoundError } from '../lib/errors.js';
+import { NotFoundError } from '../lib/errors.js';
 
 /**
  * Create and return an Express {@link Router} wired to the given
@@ -48,10 +48,9 @@ export function createAttestationRouter(repo: AttestationRepository): Router {
     try {
       const { page, limit, offset } = parsePaginationParams(req.query as Record<string, unknown>);
 
-      // Note: check the repo interface in repositories/attestationRepository.ts if needed
       const { attestations, total } = repo.findBySubject(identity, {
         includeRevoked,
-        offset, // Using offset instead of page if that's what's expected
+        offset,
         limit,
       });
       const paginationMeta = buildPaginationMeta(total, page, limit);
@@ -66,23 +65,6 @@ export function createAttestationRouter(repo: AttestationRepository): Router {
     } catch (error) {
       next(error);
     }
-
-    const { page, limit, offset } = pagination;
-
-    const { attestations, total } = repo.findBySubject(identity, {
-      includeRevoked,
-      offset,
-      limit,
-    });
-    const paginationMeta = buildPaginationMeta(total, page, limit);
-
-    const body: AttestationListResponse = {
-      identity,
-      attestations,
-      ...paginationMeta,
-    };
-
-    res.json(body);
   });
 
   // ── POST /api/attestations ───────────────────────────────────────────

@@ -17,6 +17,10 @@ import { requirePolicy } from '../middleware/policy.js'
 import { policyService } from '../services/policy/service.js'
 import type { AuthenticatedRequest } from '../middleware/auth.js'
 import type { CreatePolicyRuleInput } from '../services/policy/types.js'
+import {
+  buildPaginationMeta,
+  parsePaginationParams,
+} from '../lib/pagination.js'
 
 export function createPolicyRouter(): Router {
   const router = Router({ mergeParams: true })
@@ -37,7 +41,8 @@ export function createPolicyRouter(): Router {
       }
 
       try {
-        const rule = policyService.createRule(authReq.user!.id, authReq.user!.email, {
+        const user = authReq.user!
+        const rule = policyService.createRule(user.tenantId, user.id, user.email, {
           orgId,
           subject: body.subject,
           action: body.action,
@@ -57,9 +62,15 @@ export function createPolicyRouter(): Router {
     '/',
     requireUserAuth,
     requirePolicy('org:policy:read', (req) => `org:${req.params.orgId}`),
-    (req: Request, res: Response) => {
-      const rules = policyService.listRules(req.params.orgId)
-      res.json({ success: true, data: rules })
+    (req: Request, res: Response, next) => {
+      try {
+        const { page, limit, offset } = parsePaginationParams(req.query as Record<string, unknown>)
+        const { rules, total } = policyService.listRules(req.params.orgId, limit, offset)
+        const paginationMeta = buildPaginationMeta(total, page, limit)
+        res.json({ success: true, data: rules, ...paginationMeta })
+      } catch (error) {
+        next(error)
+      }
     },
   )
 
@@ -86,9 +97,11 @@ export function createPolicyRouter(): Router {
     (req: Request, res: Response) => {
       const authReq = req as AuthenticatedRequest
       try {
+        const user = authReq.user!
         const rule = policyService.updateRule(
-          authReq.user!.id,
-          authReq.user!.email,
+          user.tenantId,
+          user.id,
+          user.email,
           req.params.ruleId,
           req.body,
         )
@@ -108,7 +121,8 @@ export function createPolicyRouter(): Router {
     (req: Request, res: Response) => {
       const authReq = req as AuthenticatedRequest
       try {
-        policyService.deleteRule(authReq.user!.id, authReq.user!.email, req.params.ruleId)
+        const user = authReq.user!
+        policyService.deleteRule(user.tenantId, user.id, user.email, req.params.ruleId)
         res.status(204).send()
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unknown error'

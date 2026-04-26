@@ -1,7 +1,8 @@
 import { randomBytes } from 'crypto'
-import type { WebhookStore, WebhookEventType, WebhookPayload, WebhookDeliveryResult, WebhookConfig } from './types.js'
+import type { WebhookStore, WebhookEventType, WebhookPayload, WebhookDeliveryResult, WebhookConfig, DlqStore } from './types.js'
 import { deliverWebhook, type DeliveryOptions } from './delivery.js'
 import { type AuditLogService, AuditAction } from '../audit/index.js'
+import { buildDlqEntry } from './dlq.js'
 
 /**
  * Webhook service for delivering bond lifecycle events.
@@ -12,15 +13,16 @@ export class WebhookService {
 
   constructor(
     private readonly store: WebhookStore,
+    private readonly deliveryOptions?: DeliveryOptions,
+    private readonly dlq?: DlqStore,
     private readonly auditLog?: AuditLogService,
-    private readonly deliveryOptions?: DeliveryOptions
   ) {}
 
   /**
    * Rotate a webhook's signing secret.
    * Moves current secret to previousSecret and generates a new one.
    */
-  async rotateSecret(id: string, admin?: { id: string, email: string }): Promise<WebhookConfig> {
+  async rotateSecret(id: string, admin?: { id: string, email: string, tenantId: string }): Promise<WebhookConfig> {
     const webhook = await this.store.get(id)
     if (!webhook) {
       throw new Error('Webhook not found')
@@ -35,6 +37,7 @@ export class WebhookService {
 
     if (this.auditLog && admin) {
       this.auditLog.logAction(
+        admin.tenantId,
         admin.id,
         admin.email,
         AuditAction.ROTATE_WEBHOOK_SECRET,
@@ -50,7 +53,7 @@ export class WebhookService {
   /**
    * Revoke the previous secret for a webhook.
    */
-  async revokePreviousSecret(id: string, admin?: { id: string, email: string }): Promise<WebhookConfig> {
+  async revokePreviousSecret(id: string, admin?: { id: string, email: string, tenantId: string }): Promise<WebhookConfig> {
     const webhook = await this.store.get(id)
     if (!webhook) {
       throw new Error('Webhook not found')
@@ -61,6 +64,7 @@ export class WebhookService {
 
     if (this.auditLog && admin) {
       this.auditLog.logAction(
+        admin.tenantId,
         admin.id,
         admin.email,
         AuditAction.REVOKE_WEBHOOK_SECRET,
@@ -133,8 +137,9 @@ export class WebhookService {
  */
 export function createWebhookService(
   store: WebhookStore,
+  deliveryOptions?: DeliveryOptions,
+  dlq?: DlqStore,
   auditLog?: AuditLogService,
-  deliveryOptions?: DeliveryOptions
 ): WebhookService {
-  return new WebhookService(store, auditLog, deliveryOptions)
+  return new WebhookService(store, deliveryOptions, dlq, auditLog)
 }

@@ -7,6 +7,7 @@ export enum AuditAction {
   REVOKE_ROLE = 'REVOKE_ROLE',
   REVOKE_API_KEY = 'REVOKE_API_KEY',
   CREATE_API_KEY = 'CREATE_API_KEY',
+  ROTATE_API_KEY = 'ROTATE_API_KEY',
   DELETE_USER = 'DELETE_USER',
   DISPUTE_SUBMITTED = 'DISPUTE_SUBMITTED',
   DISPUTE_MARKED_UNDER_REVIEW = 'DISPUTE_MARKED_UNDER_REVIEW',
@@ -19,6 +20,11 @@ export enum AuditAction {
   EXPORT_AUDIT_LOGS = 'EXPORT_AUDIT_LOGS',
   ISSUE_IMPERSONATION_TOKEN = 'ISSUE_IMPERSONATION_TOKEN',
   REVOKE_IMPERSONATION_TOKEN = 'REVOKE_IMPERSONATION_TOKEN',
+  INVITE_MEMBER = 'INVITE_MEMBER',
+  LIST_MEMBERS = 'LIST_MEMBERS',
+  UPDATE_MEMBER_ROLE = 'UPDATE_MEMBER_ROLE',
+  DELETE_MEMBER = 'DELETE_MEMBER',
+  RESTORE_MEMBER = 'RESTORE_MEMBER',
 }
 
 export type AuditStatus = 'success' | 'failure'
@@ -33,6 +39,7 @@ export interface AuditLogInput {
   status?: AuditStatus
   ipAddress?: string
   errorMessage?: string
+  tenantId: string
 }
 
 export interface AuditLogFilters {
@@ -45,6 +52,7 @@ export interface AuditLogFilters {
   to?: string
   adminId?: string
   targetUserId?: string
+  tenantId?: string
 }
 
 /**
@@ -66,4 +74,5 @@ export interface AuditLogEntry {
   ipAddress?: string
   status: AuditStatus
   errorMessage?: string
+  tenantId: string
 }

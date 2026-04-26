@@ -13,7 +13,12 @@ const upload = multer({
   limits: { fileSize: IMPORT_PREVIEW_MAX_FILE_BYTES },
 })
 
-function handleUploadError(err: unknown, _req: Request, res: Response, next: NextFunction): void {
+function handleUploadError(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  next: NextFunction
+): void {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       res.status(413).json({
@@ -51,7 +56,8 @@ router.post(
       next()
     })
   },
-  (req: Request, res: Response) => {
+  async (req: Request, res: Response) => {
+    // <-- Marked async
     const file = req.file
     if (!file?.buffer) {
       res.status(400).json({
@@ -62,7 +68,7 @@ router.post(
       return
     }
 
-    const result = previewImportFile(file.buffer)
+    const result = await previewImportFile(file.buffer) // <-- Added await
     if (!result.success) {
       res.status(result.status).json({
         error: result.error,
@@ -78,7 +84,7 @@ router.post(
       preview: result.preview,
       rowErrors: result.rowErrors,
     })
-  },
+  }
 )
 
 export default router

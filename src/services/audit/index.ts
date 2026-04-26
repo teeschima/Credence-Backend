@@ -12,7 +12,7 @@ import { AuditAction } from './types.js'
  * In production, this would write to a database or centralized logging system
  */
 export class AuditLogService {
-  constructor(private readonly repository: AuditLogRepository) {}
+  constructor(private readonly repository: AuditLogRepository = new InMemoryAuditLogsRepository()) {}
 
   /**
    * Log an admin action
@@ -30,7 +30,8 @@ export class AuditLogService {
    * @returns The created audit log entry
    */
   async logAction(
-    inputOrActorId: AuditLogInput | string,
+    inputOrTenantId: AuditLogInput | string,
+    actorId?: string,
     actorEmail?: string,
     action?: AuditAction | string,
     targetUserId?: string,
@@ -40,11 +41,11 @@ export class AuditLogService {
     errorMessage?: string,
     ipAddress?: string,
   ): Promise<AuditLogEntry> {
-    if (typeof inputOrActorId !== 'string') {
-      return this.repository.append(inputOrActorId)
+    if (typeof inputOrTenantId !== 'string') {
+      return this.repository.append(inputOrTenantId)
     }
 
-    const actorId = inputOrActorId
+    const tenantId = inputOrTenantId
     const effectiveAction = action ?? 'UNKNOWN_ACTION'
     const resourceType =
       effectiveAction === AuditAction.LIST_USERS || effectiveAction === AuditAction.EXPORT_AUDIT_LOGS
@@ -57,11 +58,12 @@ export class AuditLogService {
     }
 
     return this.repository.append({
-      actorId,
+      tenantId,
+      actorId: actorId ?? 'unknown',
       actorEmail: actorEmail ?? 'unknown@unknown',
       action: effectiveAction,
       resourceType,
-      resourceId: targetUserId ?? actorId,
+      resourceId: targetUserId ?? actorId ?? 'unknown',
       details: mappedDetails,
       status,
       errorMessage,
@@ -81,11 +83,21 @@ export class AuditLogService {
    * @returns Array of matching audit log entries and total count
    */
   async getLogs(
-    filters?: AuditLogFilters,
+    tenantId: string | undefined,
+    filters: AuditLogFilters = {},
     limit = 100,
-    offset = 0
+    offset = 0,
+    options?: { allowSuperScope?: boolean }
   ): Promise<{ logs: AuditLogEntry[]; total: number }> {
-    return this.repository.query(filters, limit, offset)
+    // SECURITY: Enforce tenant scoping - deny by default
+    if (!tenantId && !options?.allowSuperScope) {
+      throw new Error(
+        'Tenant scoping required: either provide tenantId or explicitly enable allowSuperScope for privileged access'
+      )
+    }
+
+    const effectiveTenantId = options?.allowSuperScope ? (filters.tenantId || tenantId) : tenantId
+    return this.repository.query({ ...filters, tenantId: effectiveTenantId }, limit, offset)
   }
 
   /**
@@ -133,7 +145,7 @@ export class AuditLogService {
     const startMs = startDate.getTime()
     const endMs = endDate.getTime()
 
-    const logs = await this.getAllLogs()
+    const { logs } = await this.getLogs(tenantId, {}, Number.MAX_SAFE_INTEGER, 0, options)
     for (const log of logs) {
       const logTime = new Date(log.timestamp).getTime()
       

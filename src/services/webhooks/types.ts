@@ -13,7 +13,7 @@ export interface WebhookConfig {
   url: string
   /** Events this webhook is subscribed to. */
   events: WebhookEventType[]
-  /** Secret key for HMAC signature verification. */
+  /** Current HMAC signing secret. */
   secret: string
   /** Previously active secret (during grace period). */
   previousSecret?: string
@@ -21,6 +21,23 @@ export interface WebhookConfig {
   secretUpdatedAt: Date
   /** Whether this webhook is active. */
   active: boolean
+  /** Previous secret kept alive during safe-rollout grace period. */
+  previousSecret?: string
+  /** ISO timestamp when the secret was last rotated. */
+  secretRotatedAt?: string
+  /** ISO timestamp after which previousSecret is no longer valid. */
+  previousSecretExpiresAt?: string
+}
+
+/**
+ * Result returned to the caller after a successful secret rotation.
+ * newSecret is shown exactly once — it is never persisted in plain text.
+ */
+export interface WebhookSecretRotationResult {
+  webhookId: string
+  newSecret: string
+  rotatedAt: string
+  previousSecretExpiresAt: string
 }
 
 /**
@@ -96,4 +113,15 @@ export interface WebhookStore {
   get(id: string): Promise<WebhookConfig | null>
   /** Save or update webhook config. */
   set(config: WebhookConfig): Promise<void>
+  /**
+   * Atomically swap in a new signing secret while preserving the old one
+   * for the given grace period. Implementations must treat this as a single
+   * operation so concurrent rotations cannot race.
+   */
+  rotateSecret(
+    id: string,
+    newSecret: string,
+    previousSecret: string,
+    previousSecretExpiresAt: string,
+  ): Promise<WebhookConfig>
 }

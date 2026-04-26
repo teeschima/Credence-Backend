@@ -120,6 +120,18 @@ export function rotateApiKey(id: string): CreateApiKeyResult | null {
 }
 
 /**
+ * Retrieve a single key record by its ID without exposing the hash.
+ *
+ * @returns Key metadata (minus `hashedKey`), or null if not found.
+ */
+export function findApiKeyById(id: string): Omit<StoredApiKey, 'hashedKey'> | null {
+  const key = store.get(id)
+  if (!key) return null
+  const { hashedKey: _h, ...rest } = key
+  return rest
+}
+
+/**
  * List all keys for an owner. The `hashedKey` field is omitted.
  */
 export function listApiKeys(ownerId: string): Omit<StoredApiKey, 'hashedKey'>[] {

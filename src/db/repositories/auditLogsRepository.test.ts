@@ -19,6 +19,7 @@ describe('InMemoryAuditLogsRepository', () => {
       resourceType: 'user',
       resourceId: 'user-1',
       details: { oldRole: 'user', newRole: 'admin' },
+      tenantId: 'tenant-1',
     })
 
     entry.details.oldRole = 'tampered'
@@ -34,6 +35,7 @@ describe('InMemoryAuditLogsRepository', () => {
       action: AuditAction.ASSIGN_ROLE,
       resourceType: 'user',
       resourceId: 'user-a',
+      tenantId: 'tenant-1',
     })
     await repository.append({
       actorId: 'admin-2',
@@ -41,6 +43,7 @@ describe('InMemoryAuditLogsRepository', () => {
       action: AuditAction.REVOKE_API_KEY,
       resourceType: 'user',
       resourceId: 'user-b',
+      tenantId: 'tenant-2',
     })
 
     const byActor = await repository.query({ actorId: 'admin-1' }, 50, 0)
@@ -59,6 +62,7 @@ describe('InMemoryAuditLogsRepository', () => {
       action: AuditAction.LIST_USERS,
       resourceType: 'admin_user',
       resourceId: 'admin-1',
+      tenantId: 'tenant-1',
     })
 
     await delay(5)
@@ -69,6 +73,7 @@ describe('InMemoryAuditLogsRepository', () => {
       action: AuditAction.REVOKE_API_KEY,
       resourceType: 'user',
       resourceId: 'user-1',
+      tenantId: 'tenant-1',
     })
 
     await delay(5)
@@ -83,6 +88,7 @@ describe('InMemoryAuditLogsRepository', () => {
       action: AuditAction.ASSIGN_ROLE,
       resourceType: 'user',
       resourceId: 'user-2',
+      tenantId: 'tenant-1',
     })
 
     const range = await repository.query({ from: current }, 10, 0)
@@ -128,6 +134,7 @@ describe('PostgresAuditLogsRepository', () => {
               status: 'success',
               ip_address: '127.0.0.1',
               error_message: null,
+              tenant_id: 'tenant-1',
             },
           ],
         })
@@ -146,6 +153,7 @@ describe('PostgresAuditLogsRepository', () => {
               status: 'failure',
               ip_address: null,
               error_message: 'conflict',
+              tenant_id: 'tenant-1',
             },
           ],
         })
@@ -163,6 +171,7 @@ describe('PostgresAuditLogsRepository', () => {
       details: { reason: 'test append' },
       status: 'success',
       ipAddress: '127.0.0.1',
+      tenantId: 'tenant-1',
     })
 
     expect(created.id).toBe('append-id')
