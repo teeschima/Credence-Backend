@@ -1,6 +1,7 @@
 import { pool } from '../pool.js'
 import { OutboxRepository } from './repository.js'
 import type { OutboxEvent, OutboxCleanupConfig } from './types.js'
+import { randomUUID } from 'crypto'
 
 /**
  * Event handler that processes published domain events.
@@ -19,6 +20,12 @@ export interface OutboxPublisherConfig {
   cleanup: OutboxCleanupConfig
   /** Cleanup interval in milliseconds. Default: 3600000 (1 hour) */
   cleanupIntervalMs: number
+  /** Unique consumer identifier. Auto-generated if not provided. */
+  consumerId?: string
+  /** Lease duration in seconds. Default: 300 (5 minutes) */
+  leaseSeconds?: number
+  /** Heartbeat interval in milliseconds. Default: leaseSeconds * 1000 / 2 */
+  heartbeatIntervalMs?: number
 }
 
 const DEFAULT_CONFIG: OutboxPublisherConfig = {
@@ -34,6 +41,7 @@ const DEFAULT_CONFIG: OutboxPublisherConfig = {
 /**
  * Outbox publisher worker that polls for pending events and publishes them.
  * Handles retries, deduplication, and cleanup of old events.
+ * Supports crash-safe recovery via consumer leases and idempotent consumer keys.
  */
 export class OutboxPublisher {
   private repository: OutboxRepository
@@ -42,10 +50,17 @@ export class OutboxPublisher {
   private running: boolean = false
   private pollTimer: NodeJS.Timeout | null = null
   private cleanupTimer: NodeJS.Timeout | null = null
+  private heartbeatTimer: NodeJS.Timeout | null = null
+  private consumerId: string
+  private leaseSeconds: number
+  private heartbeatIntervalMs: number
 
   constructor(publisher: EventPublisher, config?: Partial<OutboxPublisherConfig>) {
     this.repository = new OutboxRepository()
     this.publisher = publisher
+    this.consumerId = config?.consumerId ?? randomUUID()
+    this.leaseSeconds = config?.leaseSeconds ?? 300
+    this.heartbeatIntervalMs = config?.heartbeatIntervalMs ?? (this.leaseSeconds * 1000) / 2
     this.config = { ...DEFAULT_CONFIG, ...config }
   }
 
@@ -58,7 +73,18 @@ export class OutboxPublisher {
     }
 
     this.running = true
-    console.log('[OutboxPublisher] Starting with config:', this.config)
+    console.log('[OutboxPublisher] Starting with config:', {
+      ...this.config,
+      consumerId: this.consumerId,
+      leaseSeconds: this.leaseSeconds,
+    })
+
+    // Start heartbeat loop to renew leases
+    this.heartbeatTimer = setInterval(() => {
+      this.renewLease().catch(err => {
+        console.error('[OutboxPublisher] Lease renewal error:', err)
+      })
+    }, this.heartbeatIntervalMs)
 
     // Start polling loop
     this.pollTimer = setInterval(() => {
@@ -98,7 +124,28 @@ export class OutboxPublisher {
       this.cleanupTimer = null
     }
 
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
+
+    // Release any claims to allow other consumers to pick up quickly
+    await this.repository.releaseClaims(pool, this.consumerId)
+
     console.log('[OutboxPublisher] Stopped')
+  }
+
+  /**
+   * Renew the lease on currently claimed events.
+   */
+  private async renewLease(): Promise<void> {
+    if (!this.running) {
+      return
+    }
+    const renewed = await this.repository.renewLease(pool, this.consumerId, this.leaseSeconds)
+    if (renewed > 0) {
+      console.debug(`[OutboxPublisher] Renewed lease for ${renewed} events`)
+    }
   }
 
   /**
@@ -109,7 +156,12 @@ export class OutboxPublisher {
       return
     }
 
-    const events = await this.repository.fetchPendingForProcessing(pool, this.config.batchSize)
+    const events = await this.repository.claimEvents(
+      pool,
+      this.consumerId,
+      this.config.batchSize,
+      this.leaseSeconds
+    )
 
     if (events.length === 0) {
       return

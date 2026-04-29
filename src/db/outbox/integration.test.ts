@@ -275,40 +275,164 @@ describe('Outbox Integration Tests', () => {
     })
   })
 
-  describe('Deduplication', () => {
-    it('does not process same event twice', async () => {
-      let publishCount = 0
+   describe('Deduplication', () => {
+     it('does not process same event twice', async () => {
+       let publishCount = 0
 
-      const mockPublisher: EventPublisher = {
-        publish: vi.fn(async () => {
-          publishCount++
-        }),
-      }
+       const mockPublisher: EventPublisher = {
+         publish: vi.fn(async () => {
+           publishCount++
+         }),
+       }
 
-      await outboxEmitter.emit(pool, {
-        aggregateType: 'bond',
-        aggregateId: '123',
-        eventType: 'bond.created',
-        payload: { address: '0xabc' },
-      })
+       await outboxEmitter.emit(pool, {
+         aggregateType: 'bond',
+         aggregateId: '123',
+         eventType: 'bond.created',
+         payload: { address: '0xabc' },
+       })
 
-      const publisher = new OutboxPublisher(mockPublisher, {
-        pollIntervalMs: 100,
-        batchSize: 10,
-        cleanupIntervalMs: 3600000,
-        cleanup: { publishedRetentionDays: 7, failedRetentionDays: 30 },
-      })
+       const publisher = new OutboxPublisher(mockPublisher, {
+         pollIntervalMs: 100,
+         batchSize: 10,
+         cleanupIntervalMs: 3600000,
+         cleanup: { publishedRetentionDays: 7, failedRetentionDays: 30 },
+       })
 
-      await publisher.start()
-      await new Promise(resolve => setTimeout(resolve, 500))
+       await publisher.start()
+       await new Promise(resolve => setTimeout(resolve, 500))
 
-      // Event should be published exactly once
-      expect(publishCount).toBe(1)
+       // Event should be published exactly once
+       expect(publishCount).toBe(1)
 
-      const events = await repository.getByAggregate(pool, 'bond', '123')
-      expect(events[0].status).toBe('published')
+       const events = await repository.getByAggregate(pool, 'bond', '123')
+       expect(events[0].status).toBe('published')
 
-      await publisher.stop()
-    })
-  })
-})
+       await publisher.stop()
+     })
+   })
+
+   describe('Crash safety and consumer leases', () => {
+     it('recovers events after consumer crash (stale lease reclamation)', async () => {
+       const consumerA = 'consumer-a'
+       const consumerB = 'consumer-b'
+       let processedByB = false
+       const mockPublisherB: EventPublisher = {
+         publish: vi.fn(async () => {
+           processedByB = true
+         }),
+       }
+
+       // Create event
+       await outboxEmitter.emit(pool, {
+         aggregateType: 'bond',
+         aggregateId: 'crash-test',
+         eventType: 'bond.created',
+         payload: { address: '0xabc' },
+       })
+
+       // Publisher A claims the event using claimEvents (simulate crash after claim)
+       const repo = new OutboxRepository()
+       const eventsA = await repo.claimEvents(pool, consumerA, 10, 300)
+       expect(eventsA).toHaveLength(1)
+       expect(eventsA[0].consumerId).toBe(consumerA)
+
+       // Simulate crash: expire the lease manually
+       await pool.query(
+         `UPDATE event_outbox SET lease_expires_at = NOW() - INTERVAL '1 hour' WHERE consumer_id = $1`,
+         [consumerA]
+       )
+
+       // Publisher B starts and should claim the stale event
+       const publisherB = new OutboxPublisher(mockPublisherB, {
+         consumerId: consumerB,
+         leaseSeconds: 300,
+         pollIntervalMs: 100,
+         batchSize: 10,
+         cleanupIntervalMs: 3600000,
+         cleanup: { publishedRetentionDays: 7, failedRetentionDays: 30 },
+       })
+
+       await publisherB.start()
+       await new Promise(resolve => setTimeout(resolve, 200))
+       await publisherB.stop()
+
+       // Event should have been processed by B
+       expect(processedByB).toBe(true)
+       const finalEvents = await repo.getByAggregate(pool, 'bond', 'crash-test')
+       expect(finalEvents[0].status).toBe('published')
+     })
+
+     it('multiple consumers do not claim same event concurrently', async () => {
+       const consumerA = 'consumer-a'
+       const consumerB = 'consumer-b'
+       let aProcessed = 0
+       let bProcessed = 0
+
+       const mockPubA: EventPublisher = { publish: vi.fn(async () => { aProcessed++ }) }
+       const mockPubB: EventPublisher = { publish: vi.fn(async () => { bProcessed++ }) }
+
+       // Create two events
+       await outboxEmitter.emit(pool, { aggregateType: 'bond', aggregateId: '1', eventType: 'bond.created', payload: { address: '0x1' } })
+       await outboxEmitter.emit(pool, { aggregateType: 'bond', aggregateId: '2', eventType: 'bond.created', payload: { address: '0x2' } })
+
+       const pubA = new OutboxPublisher(mockPubA, {
+         consumerId: consumerA,
+         leaseSeconds: 300,
+         pollIntervalMs: 50,
+         batchSize: 2,
+         cleanupIntervalMs: 3600000,
+         cleanup: { publishedRetentionDays: 7, failedRetentionDays: 30 },
+       })
+       const pubB = new OutboxPublisher(mockPubB, {
+         consumerId: consumerB,
+         leaseSeconds: 300,
+         pollIntervalMs: 50,
+         batchSize: 2,
+         cleanupIntervalMs: 3600000,
+         cleanup: { publishedRetentionDays: 7, failedRetentionDays: 30 },
+       })
+
+       // Start both concurrently
+       await Promise.all([pubA.start(), pubB.start()])
+       await new Promise(resolve => setTimeout(resolve, 500))
+       await Promise.all([pubA.stop(), pubB.stop()])
+
+       // Total processed should equal number of events (2), and no double-processing
+       expect(aProcessed + bProcessed).toBe(2)
+       const repo = new OutboxRepository()
+       const stats = await repo.getStats(pool)
+       expect(stats.published).toBe(2)
+       expect(stats.pending).toBe(0)
+       expect(stats.failed).toBe(0)
+     })
+
+     it('renews lease on claimed events', async () => {
+       const consumer = 'consumer-c'
+       const repo = new OutboxRepository()
+
+       // Create event and claim
+       await outboxEmitter.emit(pool, {
+         aggregateType: 'bond',
+         aggregateId: 'lease-test',
+         eventType: 'bond.created',
+         payload: { address: '0xlease' },
+       })
+       const events = await repo.claimEvents(pool, consumer, 1, 300)
+       expect(events).toHaveLength(1)
+       const initialLease = events[0].leaseExpiresAt
+       expect(initialLease).not.toBeNull()
+
+       // Wait a bit and renew
+       await new Promise(resolve => setTimeout(resolve, 100))
+       const renewedCount = await repo.renewLease(pool, consumer, 300)
+       expect(renewedCount).toBe(1)
+
+       // Fetch event again to check lease extended
+       const after = await repo.fetchByConsumer(pool, consumer)
+       expect(after).toHaveLength(1)
+       expect(after[0].leaseExpiresAt!.getTime()).toBeGreaterThan(initialLease!.getTime())
+     })
+   })
+ })
+

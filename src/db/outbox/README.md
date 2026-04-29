@@ -164,30 +164,27 @@ await publisher.start()
 
 ### 3. Configuration
 
-Add to `.env`:
+The `OutboxPublisher` accepts an optional config object:
 
-```env
-OUTBOX_ENABLED=true
-OUTBOX_POLL_INTERVAL_MS=1000
-OUTBOX_BATCH_SIZE=100
-OUTBOX_PUBLISHED_RETENTION_DAYS=7
-OUTBOX_FAILED_RETENTION_DAYS=30
-OUTBOX_CLEANUP_INTERVAL_MS=3600000
+```typescript
+const publisher = new OutboxPublisher(
+  new WebhookEventPublisher(webhookService),
+  {
+    pollIntervalMs: 1000,
+    batchSize: 100,
+    leaseSeconds: 300,           // Lease duration (seconds) for claimed events
+    heartbeatIntervalMs: 150000, // Heartbeat to renew lease (default: leaseSeconds * 1000 / 2)
+    consumerId: 'my-publisher-1', // Unique ID for this instance (auto-generated if omitted)
+    cleanup: {
+      publishedRetentionDays: 7,
+      failedRetentionDays: 30
+    },
+    cleanupIntervalMs: 3600000 // 1 hour
+  }
+)
 ```
 
-## Guarantees
-
-### At-Least-Once Delivery
-
-Events are guaranteed to be published at least once. In rare cases (e.g., publisher crashes after publishing but before marking as published), an event may be published multiple times. Consumers should be idempotent.
-
-### Ordering Per Aggregate
-
-Events for the same aggregate (e.g., same bond ID) are processed in order. Events for different aggregates may be processed concurrently.
-
-### Durability
-
-Events are persisted in the database before the transaction commits. If the application crashes, events will be published when the publisher restarts.
+You can also inject configuration via environment variables and build the config object in your app startup.
 
 ## Cleanup Policy
 
