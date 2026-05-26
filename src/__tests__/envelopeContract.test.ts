@@ -84,8 +84,10 @@ describe('Response envelope contract — /api/health', () => {
 
   it('readiness success: { status: string, dependencies: object }', async () => {
     const app = makeApp({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'up' }),
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     const { status, body } = await req(app, 'GET', '/api/health')
     expect(status).toBe(200)
@@ -95,7 +97,12 @@ describe('Response envelope contract — /api/health', () => {
   })
 
   it('readiness unhealthy: still returns { status, dependencies } with 503', async () => {
-    const app = makeApp({ db: async () => ({ status: 'down' }) })
+    const app = makeApp({
+      postgres: async () => ({ status: 'down' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'up' }),
+    })
     const { status, body } = await req(app, 'GET', '/api/health')
     expect(status).toBe(503)
     expect(typeof body.status).toBe('string')
@@ -104,8 +111,10 @@ describe('Response envelope contract — /api/health', () => {
 
   it('readiness dependency entries each carry a { status: string }', async () => {
     const app = makeApp({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'up' }),
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     const { body } = await req(app, 'GET', '/api/health')
     const deps = body.dependencies as Record<string, { status: string }>

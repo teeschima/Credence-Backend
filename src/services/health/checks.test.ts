@@ -2,86 +2,96 @@ import { describe, it, expect } from 'vitest'
 import { runHealthChecks } from './checks.js'
 
 describe('runHealthChecks', () => {
-  it('returns ok when no probes are configured (all not_configured)', async () => {
+  it('returns degraded when no probes are configured (all not_configured)', async () => {
     const result = await runHealthChecks({})
-    expect(result.status).toBe('ok')
+    expect(result.status).toBe('degraded')
     expect(result.service).toBe('credence-backend')
-    expect(result.dependencies.db).toEqual({ status: 'not_configured' })
-    expect(result.dependencies.cache).toEqual({ status: 'not_configured' })
-    expect(result.dependencies.queue).toEqual({ status: 'not_configured' })
-    expect(result.dependencies.gateway).toEqual({ status: 'not_configured' })
+    expect(result.dependencies.postgres).toEqual({ status: 'not_configured' })
+    expect(result.dependencies.redis).toEqual({ status: 'not_configured' })
+    expect(result.dependencies.horizonListener).toEqual({ status: 'not_configured' })
+    expect(result.dependencies.outboxPublisher).toEqual({ status: 'not_configured' })
   })
 
-  it('returns ok when db, cache, and queue are up', async () => {
+  it('returns ok when postgres, redis, horizon listener, and outbox are up', async () => {
     const result = await runHealthChecks({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'up' }),
-      queue: async () => ({ status: 'up' }),
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     expect(result.status).toBe('ok')
-    expect(result.dependencies.db).toEqual({ status: 'up' })
-    expect(result.dependencies.cache).toEqual({ status: 'up' })
-    expect(result.dependencies.queue).toEqual({ status: 'up' })
+    expect(result.dependencies.postgres).toEqual({ status: 'up' })
+    expect(result.dependencies.redis).toEqual({ status: 'up' })
+    expect(result.dependencies.horizonListener).toEqual({ status: 'up' })
+    expect(result.dependencies.outboxPublisher).toEqual({ status: 'up' })
   })
 
-  it('returns unhealthy and 503 when db is down', async () => {
+  it('returns unhealthy when postgres is down', async () => {
     const result = await runHealthChecks({
-      db: async () => ({ status: 'down' }),
-      cache: async () => ({ status: 'up' }),
+      postgres: async () => ({ status: 'down' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     expect(result.status).toBe('unhealthy')
-    expect(result.dependencies.db).toEqual({ status: 'down' })
-    expect(result.dependencies.cache).toEqual({ status: 'up' })
+    expect(result.dependencies.postgres).toEqual({ status: 'down' })
+    expect(result.dependencies.redis).toEqual({ status: 'up' })
   })
 
-  it('returns unhealthy when cache is down', async () => {
+  it('returns unhealthy when redis is down', async () => {
     const result = await runHealthChecks({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'down' }),
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'down' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     expect(result.status).toBe('unhealthy')
-    expect(result.dependencies.cache).toEqual({ status: 'down' })
+    expect(result.dependencies.redis).toEqual({ status: 'down' })
   })
 
-  it('returns unhealthy when queue is down', async () => {
+  it('returns unhealthy when horizon listener is down', async () => {
     const result = await runHealthChecks({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'up' }),
-      queue: async () => ({ status: 'down' }),
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'down', reason: 'stale_heartbeat' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     expect(result.status).toBe('unhealthy')
-    expect(result.dependencies.queue).toEqual({ status: 'down' })
+    expect(result.dependencies.horizonListener).toEqual({ status: 'down', reason: 'stale_heartbeat' })
   })
 
-  it('returns degraded (not unhealthy) when gateway is down', async () => {
+  it('returns unhealthy when outbox publisher is down', async () => {
     const result = await runHealthChecks({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'up' }),
-      queue: async () => ({ status: 'up' }),
-      gateway: async () => ({ status: 'down' }),
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'up' }),
+      outboxPublisher: async () => ({ status: 'down', reason: 'not_running' }),
+    })
+    expect(result.status).toBe('unhealthy')
+    expect(result.dependencies.outboxPublisher).toEqual({ status: 'down', reason: 'not_running' })
+  })
+
+  it('returns degraded when any dependency is not configured', async () => {
+    const result = await runHealthChecks({
+      postgres: async () => ({ status: 'up' }),
+      redis: async () => ({ status: 'up' }),
+      horizonListener: async () => ({ status: 'not_configured' }),
+      outboxPublisher: async () => ({ status: 'up' }),
     })
     expect(result.status).toBe('degraded')
-    expect(result.dependencies.gateway).toEqual({ status: 'down' })
-  })
-
-  it('returns ok when gateway is up', async () => {
-    const result = await runHealthChecks({
-      db: async () => ({ status: 'up' }),
-      cache: async () => ({ status: 'up' }),
-      gateway: async () => ({ status: 'up' }),
-    })
-    expect(result.status).toBe('ok')
-    expect(result.dependencies.gateway).toEqual({ status: 'up' })
+    expect(result.dependencies.horizonListener).toEqual({ status: 'not_configured' })
   })
 
   it('does not expose internal details in response', async () => {
     const result = await runHealthChecks({
-      db: async () => ({ status: 'down' }),
-      cache: async () => ({ status: 'down' }),
+      postgres: async () => ({ status: 'down' }),
+      redis: async () => ({ status: 'down' }),
+      horizonListener: async () => ({ status: 'down' }),
+      outboxPublisher: async () => ({ status: 'down' }),
     })
     const body = JSON.stringify(result)
     expect(body).not.toMatch(/error|message|stack|connection|url|host/i)
-    expect(result.dependencies.db).toEqual({ status: 'down' })
-    expect(Object.keys(result.dependencies.db)).toEqual(['status'])
+    expect(result.dependencies.postgres).toEqual({ status: 'down' })
+    expect(Object.keys(result.dependencies.postgres)).toEqual(['status'])
   })
 })

@@ -1,4 +1,9 @@
 import { Horizon } from '@stellar/stellar-sdk'
+import {
+  recordHorizonListenerHeartbeat,
+  setHorizonListenerConfigured,
+  setHorizonListenerRunning,
+} from '../services/health/runtimeState.js'
 
 /**
  * Interface for bond withdrawal event data
@@ -72,11 +77,17 @@ export class HorizonWithdrawalListener {
   private lastCursor: string
   private replayService: { captureFailure: (type: string, data: any, reason: string) => Promise<any> }
 
-  constructor(config: HorizonListenerConfig, replayService: { captureFailure: (type: string, data: any, reason: string) => Promise<any> }) {
+  constructor(
+    config: HorizonListenerConfig,
+    replayService: { captureFailure: (type: string, data: any, reason: string) => Promise<any> } = {
+      captureFailure: async () => ({}),
+    },
+  ) {
     this.config = config
     this.server = new Horizon.Server(config.horizonUrl)
     this.lastCursor = config.lastCursor || 'now'
     this.replayService = replayService
+    setHorizonListenerConfigured(true)
   }
 
   /**
@@ -89,6 +100,8 @@ export class HorizonWithdrawalListener {
     }
 
     this.isRunning = true
+    setHorizonListenerRunning(true)
+    recordHorizonListenerHeartbeat(this.lastCursor)
     console.log(`Starting Horizon withdrawal listener for ${this.config.horizonUrl}`)
 
     // Start polling for events
@@ -104,6 +117,7 @@ export class HorizonWithdrawalListener {
     }
 
     this.isRunning = false
+    setHorizonListenerRunning(false)
     
     if (this.pollTimer) {
       clearTimeout(this.pollTimer)
@@ -157,6 +171,9 @@ export class HorizonWithdrawalListener {
       if (events.length > 0) {
         this.lastCursor = events[events.length - 1].pagingToken
       }
+
+      // Poll completed and cursor is current; mark heartbeat.
+      recordHorizonListenerHeartbeat(this.lastCursor)
 
     } catch (error) {
       console.error('Error polling for withdrawal events:', error)

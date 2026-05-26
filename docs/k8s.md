@@ -69,6 +69,15 @@ The deployment uses the existing health endpoints:
 | **Readiness** | `GET /api/health/ready` | Remove from Service if dependencies are down |
 | **Startup** | `GET /api/health/live` | Allow time for container startup |
 
+Readiness now includes deep subsystem checks and returns a per-check JSON body:
+
+- `postgres`: validates PostgreSQL connectivity via the shared pool.
+- `redis`: validates Redis availability via the shared Redis connection manager.
+- `horizonListener`: validates listener running state and heartbeat staleness.
+- `outboxPublisher`: validates publisher running state and lease heartbeat staleness.
+
+Pods are marked not-ready when any of the above checks return `down`.
+
 ## Scaling
 
 ```bash

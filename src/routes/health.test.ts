@@ -13,75 +13,88 @@ describe('Health routes', () => {
   describe('GET /api/health (readiness)', () => {
     it('returns 200 and ok when all critical deps are up', async () => {
       const app = appWithHealth({
-        db: async () => ({ status: 'up' }),
-        cache: async () => ({ status: 'up' }),
-        queue: async () => ({ status: 'up' }),
+        postgres: async () => ({ status: 'up' }),
+        redis: async () => ({ status: 'up' }),
+        horizonListener: async () => ({ status: 'up' }),
+        outboxPublisher: async () => ({ status: 'up' }),
       })
       const res = await request(app).get('/api/health')
       expect(res.status).toBe(200)
       expect(res.body.status).toBe('ok')
-      expect(res.body.dependencies.db.status).toBe('up')
-      expect(res.body.dependencies.cache.status).toBe('up')
-      expect(res.body.dependencies.queue.status).toBe('up')
+      expect(res.body.dependencies.postgres.status).toBe('up')
+      expect(res.body.dependencies.redis.status).toBe('up')
+      expect(res.body.dependencies.horizonListener.status).toBe('up')
+      expect(res.body.dependencies.outboxPublisher.status).toBe('up')
     })
 
-    it('returns 200 when no deps configured', async () => {
+    it('returns 200 degraded when no deps configured', async () => {
       const app = appWithHealth({})
       const res = await request(app).get('/api/health')
       expect(res.status).toBe(200)
-      expect(res.body.status).toBe('ok')
-      expect(res.body.dependencies.db.status).toBe('not_configured')
-      expect(res.body.dependencies.cache.status).toBe('not_configured')
-      expect(res.body.dependencies.queue.status).toBe('not_configured')
-    })
-
-    it('returns 503 when db is down', async () => {
-      const app = appWithHealth({
-        db: async () => ({ status: 'down' }),
-        cache: async () => ({ status: 'up' }),
-      })
-      const res = await request(app).get('/api/health')
-      expect(res.status).toBe(503)
-      expect(res.body.status).toBe('unhealthy')
-    })
-
-    it('returns 503 when cache is down', async () => {
-      const app = appWithHealth({
-        db: async () => ({ status: 'up' }),
-        cache: async () => ({ status: 'down' }),
-      })
-      const res = await request(app).get('/api/health')
-      expect(res.status).toBe(503)
-      expect(res.body.status).toBe('unhealthy')
-    })
-
-    it('returns 503 when db, cache, and queue are down', async () => {
-      const app = appWithHealth({
-        db: async () => ({ status: 'down' }),
-        cache: async () => ({ status: 'down' }),
-        queue: async () => ({ status: 'down' }),
-      })
-      const res = await request(app).get('/api/health')
-      expect(res.status).toBe(503)
-    })
-
-    it('returns 200 when only gateway is down (degraded)', async () => {
-      const app = appWithHealth({
-        db: async () => ({ status: 'up' }),
-        cache: async () => ({ status: 'up' }),
-        gateway: async () => ({ status: 'down' }),
-      })
-      const res = await request(app).get('/api/health')
-      expect(res.status).toBe(200)
       expect(res.body.status).toBe('degraded')
+      expect(res.body.dependencies.postgres.status).toBe('not_configured')
+      expect(res.body.dependencies.redis.status).toBe('not_configured')
+      expect(res.body.dependencies.horizonListener.status).toBe('not_configured')
+      expect(res.body.dependencies.outboxPublisher.status).toBe('not_configured')
+    })
+
+    it('returns 503 when postgres is down', async () => {
+      const app = appWithHealth({
+        postgres: async () => ({ status: 'down' }),
+        redis: async () => ({ status: 'up' }),
+        horizonListener: async () => ({ status: 'up' }),
+        outboxPublisher: async () => ({ status: 'up' }),
+      })
+      const res = await request(app).get('/api/health')
+      expect(res.status).toBe(503)
+      expect(res.body.status).toBe('unhealthy')
+    })
+
+    it('returns 503 when redis is down', async () => {
+      const app = appWithHealth({
+        postgres: async () => ({ status: 'up' }),
+        redis: async () => ({ status: 'down' }),
+        horizonListener: async () => ({ status: 'up' }),
+        outboxPublisher: async () => ({ status: 'up' }),
+      })
+      const res = await request(app).get('/api/health')
+      expect(res.status).toBe(503)
+      expect(res.body.status).toBe('unhealthy')
+    })
+
+    it('returns 503 when horizon listener heartbeat is stale', async () => {
+      const app = appWithHealth({
+        postgres: async () => ({ status: 'up' }),
+        redis: async () => ({ status: 'up' }),
+        horizonListener: async () => ({ status: 'down', reason: 'stale_heartbeat' }),
+        outboxPublisher: async () => ({ status: 'up' }),
+      })
+      const res = await request(app).get('/api/health')
+      expect(res.status).toBe(503)
+      expect(res.body.dependencies.horizonListener.reason).toBe('stale_heartbeat')
+    })
+
+    it('returns 503 when outbox publisher is not running', async () => {
+      const app = appWithHealth({
+        postgres: async () => ({ status: 'up' }),
+        redis: async () => ({ status: 'up' }),
+        horizonListener: async () => ({ status: 'up' }),
+        outboxPublisher: async () => ({ status: 'down', reason: 'not_running' }),
+      })
+      const res = await request(app).get('/api/health')
+      expect(res.status).toBe(503)
+      expect(res.body.status).toBe('unhealthy')
+      expect(res.body.dependencies.outboxPublisher.reason).toBe('not_running')
     })
   })
 
   describe('GET /api/health/ready', () => {
     it('behaves like GET /api/health', async () => {
       const app = appWithHealth({
-        db: async () => ({ status: 'down' }),
-        cache: async () => ({ status: 'up' }),
+        postgres: async () => ({ status: 'down' }),
+        redis: async () => ({ status: 'up' }),
+        horizonListener: async () => ({ status: 'up' }),
+        outboxPublisher: async () => ({ status: 'up' }),
       })
       const res = await request(app).get('/api/health/ready')
       expect(res.status).toBe(503)
@@ -92,8 +105,10 @@ describe('Health routes', () => {
   describe('GET /api/health/live (liveness)', () => {
     it('returns 200 always', async () => {
       const app = appWithHealth({
-        db: async () => ({ status: 'down' }),
-        cache: async () => ({ status: 'down' }),
+        postgres: async () => ({ status: 'down' }),
+        redis: async () => ({ status: 'down' }),
+        horizonListener: async () => ({ status: 'down' }),
+        outboxPublisher: async () => ({ status: 'down' }),
       })
       const res = await request(app).get('/api/health/live')
       expect(res.status).toBe(200)

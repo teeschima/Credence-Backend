@@ -9,6 +9,15 @@ The monitoring stack consists of:
 - **Grafana** - Visualization and dashboards
 - **Application metrics** - Custom business and infrastructure metrics
 
+## Health Endpoints
+
+The health router separates liveness and readiness:
+
+- `GET /api/health/live`: process-level liveness only (always `200` while process is up).
+- `GET /api/health` and `GET /api/health/ready`: deep readiness checks for Postgres, Redis, Horizon listener heartbeat, and outbox publisher lease heartbeat.
+
+Readiness responses include per-check status (`up`, `down`, `not_configured`) and safe diagnostic fields (for example heartbeat age) without exposing secrets such as connection strings.
+
 ## Architecture
 
 ```
