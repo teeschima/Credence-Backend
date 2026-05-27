@@ -1,3 +1,4 @@
+const emitMetric = (name: string, val: number, tags: any) => console.log(`METRIC [${name}]:`, val, tags);
 import { createHmac } from 'crypto'
 import {
   getBackoffDelayMs,
@@ -96,6 +97,7 @@ export async function deliverWebhook(
     overrides: {
       ...legacyOverrides,
       ...(retryPolicy ?? {}),
+      maxAttempts: webhook.maxAttempts ?? legacyOverrides.maxAttempts,
     },
   })
 
@@ -123,9 +125,10 @@ export async function deliverWebhook(
   for (let attempt = 1; attempt <= policy.maxAttempts; attempt++) {
     attempts = attempt
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    const timeoutId = setTimeout(() => controller.abort(), webhook.timeoutMs ?? timeout ?? 5000)
 
     try {
+      const fetchStart = Date.now();
       const response = await fetchFn(webhook.url, {
         method: 'POST',
         headers: {
@@ -137,6 +140,7 @@ export async function deliverWebhook(
         signal: controller.signal,
       })
 
+      emitMetric('webhook_delivery_duration', Date.now() - fetchStart, { url: webhook.url });
       if (response.ok) {
         retryObserver.onSuccess?.({
           provider,
@@ -163,7 +167,9 @@ export async function deliverWebhook(
         })
         break
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.message?.includes('timeout')) emitMetric('webhook_timeout_total', 1, { url: webhook.url });
+
       lastError = err instanceof Error ? err.message : 'Unknown error'
     } finally {
       clearTimeout(timeoutId)
