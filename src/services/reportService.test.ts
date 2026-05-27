@@ -3,7 +3,7 @@ import { ReportService } from './reportService.js'
 import { ReportRepository } from '../db/repositories/reportRepository.js'
 import { ReportJobStatus } from '../jobs/types.js'
 import { cache } from '../cache/redis.js'
-import * as invalidation from '../cache/invalidation.js'
+import { ReportStorageService } from './reportStorage.js'
 
 vi.mock('../cache/redis.js', () => ({
   cache: {
@@ -27,12 +27,20 @@ describe('ReportService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    ReportStorageService.reset()
+
     mockReportRepository = {
       create: vi.fn(),
       findById: vi.fn(),
       updateStatus: vi.fn(),
     }
-    reportService = new ReportService(mockReportRepository as unknown as ReportRepository)
+
+    process.env.REPORT_STORAGE_SIGNING_SECRET = 'test-report-signing-secret-32chr'
+    process.env.REPORT_DOWNLOAD_BASE_URL = 'https://credence.example.com'
+
+    const storage = new ReportStorageService()
+
+    reportService = new ReportService(mockReportRepository as unknown as ReportRepository, storage)
   })
 
   describe('startReportGeneration', () => {
@@ -52,16 +60,22 @@ describe('ReportService', () => {
       expect(mockReportRepository.create).toHaveBeenCalledWith('test-report')
     })
 
-    it('should trigger background processing', async () => {
-      const mockJob = { id: 'job-123', type: 'test-report', status: ReportJobStatus.QUEUED }
+    it('should delegate background processing to the worker', async () => {
+      const mockJob = {
+        id: 'job-123',
+        type: 'test-report',
+        status: ReportJobStatus.QUEUED,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
       mockReportRepository.create.mockResolvedValue(mockJob)
-      
-      // Spy on processReport (private method)
-      const processSpy = vi.spyOn(reportService as any, 'processReport')
 
-      await reportService.startReportGeneration('test-report')
+      // Spy on the worker's processReport
+      const workerSpy = vi.spyOn((reportService as any).worker, 'processReport').mockResolvedValue(undefined)
 
-      expect(processSpy).toHaveBeenCalledWith('job-123')
+      await reportService.startReportGeneration('test-report', 'tenant-custom')
+
+      expect(workerSpy).toHaveBeenCalledWith('job-123', 'test-report', 'tenant-custom')
     })
   })
 
@@ -102,57 +116,34 @@ describe('ReportService', () => {
     })
   })
 
-  describe('processReport (background logic)', () => {
-    it('should transition status from QUEUED -> RUNNING -> COMPLETED', async () => {
-      const jobId = 'job-123'
-      const mockJob = { id: jobId, status: ReportJobStatus.COMPLETED }
-      
-      // Mock updateStatus and findById to return a job
-      mockReportRepository.updateStatus.mockResolvedValue(undefined)
-      mockReportRepository.findById.mockResolvedValue(mockJob)
+  describe('getSignedDownloadUrl', () => {
+    it('returns a signed URL when storageKey is present', () => {
+      const job = {
+        id: 'job-123',
+        type: 'test-report',
+        status: ReportJobStatus.COMPLETED,
+        storageKey: 'reports/tenant-1/job-123.pdf',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
 
-      // Use a shorter timeout for testing if possible, or mock timers
-      vi.useFakeTimers()
-
-      const processPromise = (reportService as any).processReport(jobId)
-
-      // Should have called RUNNING status
-      expect(mockReportRepository.updateStatus).toHaveBeenCalledWith(jobId, ReportJobStatus.RUNNING, undefined)
-
-      // Fast-forward timers
-      await vi.runAllTimersAsync()
-      await processPromise
-
-      // Should have called COMPLETED status with artifact URL
-      expect(mockReportRepository.updateStatus).toHaveBeenCalledWith(
-        jobId,
-        ReportJobStatus.COMPLETED,
-        expect.objectContaining({
-          artifactUrl: expect.stringContaining(jobId),
-        })
-      )
-
-      // Verify cache invalidation was called
-      expect(invalidation.invalidateCache).toHaveBeenCalled()
-
-      vi.useRealTimers()
+      const url = reportService.getSignedDownloadUrl(job)
+      expect(url).toContain('/api/reports/download/')
+      expect(url).toContain('expires=')
+      expect(url).toContain('signature=')
     })
 
-    it('should transition to FAILED if an error occurs', async () => {
-      const jobId = 'job-123'
-      const mockJob = { id: jobId, status: ReportJobStatus.FAILED }
-      mockReportRepository.updateStatus.mockRejectedValueOnce(new Error('DB Error'))
-      mockReportRepository.findById.mockResolvedValue(mockJob)
+    it('returns null when storageKey is missing', () => {
+      const job = {
+        id: 'job-123',
+        type: 'test-report',
+        status: ReportJobStatus.QUEUED,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
 
-      await (reportService as any).processReport(jobId)
-
-      expect(mockReportRepository.updateStatus).toHaveBeenCalledWith(
-        jobId,
-        ReportJobStatus.FAILED,
-        expect.objectContaining({
-          failureReason: 'INTERNAL_ERROR',
-        })
-      )
+      const url = reportService.getSignedDownloadUrl(job)
+      expect(url).toBeNull()
     })
   })
 })

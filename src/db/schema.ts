@@ -87,6 +87,7 @@ const CREATE_TABLE_STATEMENTS = [
     status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed')),
     failure_reason TEXT,
     artifact_url TEXT,
+    storage_key TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )
