@@ -7,7 +7,7 @@ import { z } from 'zod'
 export const addressSchema = z
   .string()
   .min(1, 'Address is required')
-  .regex(/^0x[a-fA-F0-9]{40}$/, 'Address must be a valid 0x-prefixed 40-character hex string')
+  .regex(/^(0x[a-fA-F0-9]{40}|G[A-Z2-7]{55})$/, 'Address must be a valid Ethereum (0x...) or Stellar (G...) address')
 
 /** Validated address string (0x + 40 hex chars). */
 export type Address = z.infer<typeof addressSchema>

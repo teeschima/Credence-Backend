@@ -94,18 +94,25 @@ export async function getTrustScore(address: string): Promise<TrustScore | null>
   if (cached) return cached
 
   // 2. Try DB
-  const { rows } = await pool.query(
+  const idResult = await pool.query(
     `SELECT address, bonded_amount as "bondedAmount", 
-            bond_start as "bondStart", 
-            (SELECT COUNT(*)::int FROM attestations WHERE subject_address = address) as "attestationCount"
+            bond_start as "bondStart"
      FROM identities
      WHERE address = $1`,
     [address]
   )
 
-  if (rows.length === 0) return null
+  if (idResult.rows.length === 0) {
+    return null
+  }
 
-  const record: IdentityRecord = rows[0]
+  const row = idResult.rows[0]
+  const attResult = await pool.query(
+    'SELECT COUNT(*)::int as count FROM attestations WHERE subject_address = $1',
+    [address]
+  )
+  const attestationCount = parseInt(attResult.rows[0]?.count || '0', 10)
+  const record: IdentityRecord = { ...row, attestationCount }
   const trustScore = computeTrustScoreFromRecord(record)
 
   // 3. Save to cache (TTL 1 hour)

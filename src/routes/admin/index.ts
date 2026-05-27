@@ -60,27 +60,28 @@ export function createAdminRouter(): Router {
         if (!validRoles.includes(req.query.role as UserRole)) {
           throw new ValidationError(`Invalid role: ${req.query.role}`)
         }
-
-        // Get users
-        const result = await adminService.listUsers(
-          user.id,
-          user.email,
-          { page, limit, offset },
-          filters,
-        );
-
-        res.status(200).json({
-          success: true,
-          data: {
-            ...result,
-            ...buildPaginationMeta(result.total, page, limit),
-          },
-        });
-      } catch (error) {
-        next(error);
+        filters.role = req.query.role
       }
-    },
-  );
+
+      // Get users
+      const result = await adminService.listUsers(
+        user.id,
+        user.email,
+        { page, limit, offset },
+        filters,
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          ...result,
+          ...buildPaginationMeta(result.total, page, limit),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   /**
    * POST /api/admin/roles/assign
@@ -96,24 +97,21 @@ export function createAdminRouter(): Router {
         throw new ValidationError('Missing required fields: userId, role')
       }
 
-      const result = await adminService.assignRole(user.id, user.email, assignRequest)
+      const result = await adminService.assignRole(
+        user.id,
+        user.email,
+        assignRequest,
+      );
 
-        const result = await adminService.assignRole(
-          user.id,
-          user.email,
-          assignRequest,
-        );
-
-        res.status(200).json({
-          success: true,
-          message: result.message,
-          data: result.user,
-        });
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
+      res.status(200).json({
+        success: true,
+        message: result.message,
+        data: result.user,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   /**
    * POST /api/admin/keys/revoke
@@ -129,23 +127,20 @@ export function createAdminRouter(): Router {
         throw new ValidationError('Missing required fields: userId, apiKey')
       }
 
-      const result = await adminService.revokeApiKey(user.id, user.email, revokeRequest)
+      const result = await adminService.revokeApiKey(
+        user.id,
+        user.email,
+        revokeRequest,
+      );
 
-        const result = await adminService.revokeApiKey(
-          user.id,
-          user.email,
-          revokeRequest,
-        );
-
-        res.status(200).json({
-          success: true,
-          message: result.message,
-        });
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
+      res.status(200).json({
+        success: true,
+        message: result.message,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
 
   /**
    * POST /api/admin/impersonate
@@ -167,29 +162,29 @@ export function createAdminRouter(): Router {
         return
       }
 
-        const issued = impersonationService.issueToken(
-          user.id,
-          user.email,
-          {
-            targetUserId: body.targetUserId,
-            reason: body.reason,
-            ttlSeconds: body.ttlSeconds,
-          },
-          req.ip,
-        );
+      const issued = impersonationService.issueToken(
+        user.id,
+        user.email,
+        user.tenantId,
+        {
+          targetUserId: body.targetUserId,
+          reason: body.reason,
+          ttlSeconds: body.ttlSeconds,
+        },
+        req.ip,
+      );
 
-        res.status(201).json({ success: true, data: issued });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        if (/User not found/i.test(message)) {
-          res.status(404).json({ error: "NotFound", message });
-          return;
-        }
-        res.status(400).json({ error: "BadRequest", message });
+      res.status(201).json({ success: true, data: issued });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unknown error";
+      if (/User not found/i.test(message)) {
+        res.status(404).json({ error: "NotFound", message });
+        return;
       }
-    },
-  );
+      res.status(400).json({ error: "BadRequest", message });
+    }
+  });
 
   /**
    * POST /api/admin/impersonate/:tokenId/revoke
@@ -215,21 +210,9 @@ export function createAdminRouter(): Router {
         res.status(404).json({ error: 'NotFound', message })
         return
       }
-
-      try {
-        impersonationService.revokeToken(user.id, user.email, tokenId, req.ip);
-        res.status(200).json({ success: true });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-        if (/Token not found/i.test(message)) {
-          res.status(404).json({ error: "NotFound", message });
-          return;
-        }
-        res.status(400).json({ error: "BadRequest", message });
-      }
-    },
-  );
+      res.status(400).json({ error: "BadRequest", message });
+    }
+  });
 
   /**
    * GET /api/admin/audit-logs
@@ -253,7 +236,7 @@ export function createAdminRouter(): Router {
       if (req.query.from) filters.from = req.query.from
       if (req.query.to) filters.to = req.query.to
 
-      const result = await adminService.getAuditLogs(user.id, user.email, filters, limit, offset)
+      const result = await adminService.getAuditLogs(user.id, user.email, filters, limit, offset, user)
 
       res.status(200).json({
         success: true,
@@ -285,8 +268,8 @@ export function createAdminRouter(): Router {
           );
         }
 
-        const startDate = new Date(req.query.startDate as string);
-        const endDate = new Date(req.query.endDate as string);
+      const startDate = new Date(req.query.startDate as string);
+      const endDate = new Date(req.query.endDate as string);
 
       if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
         throw new ValidationError('Invalid date format. Use ISO strings.')
@@ -295,8 +278,6 @@ export function createAdminRouter(): Router {
       if (startDate > endDate) {
         throw new ValidationError('startDate must be before or equal to endDate')
       }
-
-      const stream = adminService.exportAuditLogs(user.id, user.email, startDate, endDate, user)
 
       // Set headers for NDJSON streaming
       res.setHeader('Content-Type', 'application/x-ndjson')
@@ -309,58 +290,39 @@ export function createAdminRouter(): Router {
           dateRange: { start: startDate.toISOString(), end: endDate.toISOString() },
           schemaVersion: "1.0"
         }
+      };
+      res.write(JSON.stringify(metadata) + "\n");
 
-        const stream = adminService.exportAuditLogs(
-          user.id,
-          user.email,
-          startDate,
-          endDate,
-          user,
-        );
+      const stream = adminService.exportAuditLogs(
+        user.id,
+        user.email,
+        startDate,
+        endDate,
+        user,
+      );
 
-        // Set headers for NDJSON streaming
-        res.setHeader("Content-Type", "application/x-ndjson");
-        res.setHeader(
-          "Content-Disposition",
-          'attachment; filename="audit-logs.ndjson"',
-        );
-
-        const metadata = {
-          _meta: {
-            exportedAt: new Date().toISOString(),
-            exportedBy: user.email,
-            dateRange: {
-              start: startDate.toISOString(),
-              end: endDate.toISOString(),
-            },
-            schemaVersion: "1.0",
-          },
-        };
-        res.write(JSON.stringify(metadata) + "\n");
-
-        let count = 0;
-        for await (const log of stream) {
-          res.write(JSON.stringify(log) + "\n");
-          count++;
-        }
-
-        adminService.logExportCompletion(
-          user.id,
-          user.email,
-          startDate,
-          endDate,
-          count,
-        );
-        res.end();
-      } catch (error) {
-        if (!res.headersSent) {
-          next(error);
-        } else {
-          res.end();
-        }
+      let count = 0;
+      for await (const log of stream) {
+        res.write(JSON.stringify(log) + "\n");
+        count++;
       }
-    },
-  );
+
+      adminService.logExportCompletion(
+        user.id,
+        user.email,
+        startDate,
+        endDate,
+        count,
+      );
+      res.end();
+    } catch (error) {
+      if (!res.headersSent) {
+        next(error);
+      } else {
+        res.end();
+      }
+    }
+  });
 
   /**
    * GET /api/admin/events/failed
