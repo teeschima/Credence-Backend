@@ -6,6 +6,10 @@ import type {
   SnapshotJobResult,
   ScoreSnapshot,
 } from './types.js'
+import { loadConfig } from '../config/index.js'
+
+// Load config to get scoring model version
+const config = loadConfig()
 
 /**
  * Options for score snapshot job.
@@ -102,6 +106,7 @@ export class ScoreSnapshotJob {
                 bondedAmount: data.bondedAmount,
                 attestationCount: data.attestationCount,
                 timestamp: new Date().toISOString(),
+                scoringModelVersion: config.reputation.scoringModelVersion,
               }
 
               snapshots.push(snapshot)
@@ -136,6 +141,7 @@ export class ScoreSnapshotJob {
                 bondedAmount: data.bondedAmount,
                 attestationCount: data.attestationCount,
                 timestamp: new Date().toISOString(),
+                scoringModelVersion: config.reputation.scoringModelVersion,
               }
 
               snapshots.push(snapshot)

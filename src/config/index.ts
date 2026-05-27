@@ -159,6 +159,45 @@ export const envSchema = z.object({
     .string()
     .default('true')
     .transform((val: string) => val === 'true'),
+
+  // Reputation scoring model
+  REPUTATION_MODEL_VERSION: z.string().default('1.0.0'),
+  REPUTATION_BOND_SCORE_MAX: z
+    .string()
+    .default('50')
+    .transform(Number)
+    .pipe(z.number().min(0).max(100)),
+  REPUTATION_DURATION_SCORE_MAX: z
+    .string()
+    .default('20')
+    .transform(Number)
+    .pipe(z.number().min(0).max(100)),
+  REPUTATION_ATTESTATION_SCORE_MAX: z
+    .string()
+    .default('30')
+    .transform(Number)
+    .pipe(z.number().min(0).max(100)),
+  REPUTATION_ONE_ETH_WEI: z
+    .string()
+    .default('1000000000000000000')
+    .refine((val) => {
+      try {
+        BigInt(val)
+        return true
+      } catch {
+        return false
+      }
+    }, { message: 'REPUTATION_ONE_ETH_WEI must be a valid BigInt string' }),
+  REPUTATION_MAX_DURATION_DAYS: z
+    .string()
+    .default('365')
+    .transform(Number)
+    .pipe(z.number().int().min(1)),
+  REPUTATION_MAX_ATTESTATION_COUNT: z
+    .string()
+    .default('5')
+    .transform(Number)
+    .pipe(z.number().int().min(1)),
 })
 
 export type Env = z.infer<typeof envSchema>
@@ -224,6 +263,15 @@ export interface Config {
     maxPro: number
     maxEnterprise: number
     failOpen: boolean
+  }
+  reputation: {
+    scoringModelVersion: string
+    bondScoreMax: number
+    durationScoreMax: number
+    attestationScoreMax: number
+    oneEthWei: bigint
+    maxDurationDays: number
+    maxAttestationCount: number
   }
 }
 
@@ -344,6 +392,15 @@ function mapEnvToConfig(env: Env): Config {
       maxPro: env.RATE_LIMIT_MAX_PRO,
       maxEnterprise: env.RATE_LIMIT_MAX_ENTERPRISE,
       failOpen: env.RATE_LIMIT_FAIL_OPEN,
+    },
+    reputation: {
+      scoringModelVersion: env.REPUTATION_MODEL_VERSION,
+      bondScoreMax: env.REPUTATION_BOND_SCORE_MAX,
+      durationScoreMax: env.REPUTATION_DURATION_SCORE_MAX,
+      attestationScoreMax: env.REPUTATION_ATTESTATION_SCORE_MAX,
+      oneEthWei: BigInt(env.REPUTATION_ONE_ETH_WEI),
+      maxDurationDays: env.REPUTATION_MAX_DURATION_DAYS,
+      maxAttestationCount: env.REPUTATION_MAX_ATTESTATION_COUNT,
     },
   }
 

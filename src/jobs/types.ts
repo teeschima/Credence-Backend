@@ -12,6 +12,8 @@ export interface ScoreSnapshot {
   attestationCount: number
   /** Timestamp when snapshot was taken (ISO string). */
   timestamp: string
+  /** Scoring model version used to compute this score. */
+  scoringModelVersion?: string
 }
 
 /**
